@@ -9,7 +9,6 @@ from typing import Optional, List, Dict, Any
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
-
 LASTFM_API_KEY = os.getenv("LASTFM_API_KEY")
 
 # Define la URL base para la API de Last.fm.

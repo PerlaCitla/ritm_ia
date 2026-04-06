@@ -8,6 +8,10 @@ import pandas as pd
 from datetime import date, timedelta
 from typing import Optional, List, Dict, Any
 
+from musicbrainz_client import search_release_groups
+from musicbrainz_client import get_release_group_details
+
+
 BASE_URL = "https://api.listenbrainz.org" # Define la URL base para la API de ListenBrainz.
 
 session = requests.Session() # Crea una sesión de requests para mantener la configuración entre peticiones.
