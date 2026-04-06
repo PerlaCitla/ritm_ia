@@ -1,6 +1,9 @@
-def main():
-    print("Hello from ritm-ia!")
+import streamlit as st
 
+st.title('🎶 Ritm-IA ✨')
+st.caption('📈 Tendencias musicales con IA 🤖')
 
-if __name__ == "__main__":
-    main()
+prompt = st.chat_input('¿En que te puedo ayudar?')
+
+if prompt:
+    st.write("El usuario ha enviado el siguiente prompt: ", prompt)
