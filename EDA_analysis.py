@@ -1,0 +1,101 @@
+from typing import Dict, List, Tuple, Literal, Union, Optional
+import pandas as pd
+import numpy as np
+import os
+
+
+#################
+from my_functions.eda_functions import tipo_variable,find_completely_null_columns,rename_columns_by_type,identificar_outliers_iqr,remove_high_null_columns,get_columns_by_null_percentage,impute_missing_values
+
+
+base_dir = os.path.dirname(os.path.abspath(__file__))
+file_path = os.path.join(base_dir, 'inputs')
+
+df_music_master = pd.read_csv(os.path.join(file_path, 'music_master_2025_final_clean_20260401.csv'))
+df_music_2024 = pd.read_csv(os.path.join(file_path, 'music_master_2024_final_clean_20260401.csv'))
+df_music_2023 = pd.read_csv(os.path.join(file_path, 'music_master_2023_final_clean_20260402.csv'))
+df_music_2022 = pd.read_csv(os.path.join(file_path, 'music_master_2022_final_clean_20260402.csv'))
+df_music_2021 = pd.read_csv(os.path.join(file_path, 'music_master_2021_final_clean_20260403.csv'))
+df_music_2020 = pd.read_csv(os.path.join(file_path, 'music_master_2020_final_clean_20260403.csv'))
+df_music_2019 = pd.read_csv(os.path.join(file_path, 'music_master_2019_final_clean_20260403.csv'))
+df_music_2018 = pd.read_csv(os.path.join(file_path, 'music_master_2018_final_clean_20260403.csv'))
+df_music_2017 = pd.read_csv(os.path.join(file_path, 'music_master_2017_final_clean_20260403.csv'))
+df_music_2016 = pd.read_csv(os.path.join(file_path, 'music_master_2016_final_clean_20260403.csv'))
+df_music_2015 = pd.read_csv(os.path.join(file_path, 'music_master_2015_final_clean_20260403.csv'))
+df_music_2014 = pd.read_csv(os.path.join(file_path, 'music_master_2014_final_clean_20260404.csv'))
+df_music_2013 = pd.read_csv(os.path.join(file_path, 'music_master_2013_final_clean_20260404.csv'))
+df_music_2012 = pd.read_csv(os.path.join(file_path, 'music_master_2012_final_clean_20260404.csv'))
+df_music_2011 = pd.read_csv(os.path.join(file_path, 'music_master_2011_final_clean_20260404.csv'))
+df_music_2010 = pd.read_csv(os.path.join(file_path, 'music_master_2010_final_clean_20260404.csv'))
+df_music_2009 = pd.read_csv(os.path.join(file_path, 'music_master_2009_final_clean_20260404.csv'))
+df_music_2008 = pd.read_csv(os.path.join(file_path, 'music_master_2008_final_clean_20260405.csv'))
+df_music_2007 = pd.read_csv(os.path.join(file_path, 'music_master_2007_final_clean_20260405.csv'))
+df_music_2006 = pd.read_csv(os.path.join(file_path, 'music_master_2006_final_clean_20260405.csv'))
+
+df_music_master = pd.concat([df_music_master, df_music_2024,df_music_2023,df_music_2021,df_music_2020,df_music_2019,df_music_2018,df_music_2017,df_music_2016,df_music_2015,df_music_2014,df_music_2013,df_music_2012,df_music_2011,df_music_2009,df_music_2008,df_music_2006])
+
+df_music_master.reset_index(drop=True, inplace=True)
+
+
+df_music_master.drop(columns=["trend_score_v0",
+                          "score_popularity",
+                          "score_users",
+                          "score_sitewide",
+                          "score_artist_strength",
+                          "score_recency"], inplace=True)
+
+print(df_music_master.shape)
+print(df_music_master.head())
+
+# resumen_df, discretas, continuas = tipo_variable(df_music_master)
+
+# print(discretas)
+
+
+# Limpieza de datos
+## Verificar si hay filas duplicadas
+
+if df_music_master[df_music_master.duplicated(keep=False)].shape[0] > 0:
+    print("Hay filas duplicadas en el DataFrame.")
+    df_music_master.drop_duplicates(inplace=True)
+else:
+    print("No hay filas duplicadas en el DataFrame.")
+
+
+## Eliminación de Outliers
+
+### Se muestran las columnas que son 100 nulas
+
+nulas_completas = find_completely_null_columns(df_music_master)
+print(f"Columnas completamente nulas: {nulas_completas}")
+
+# Se eliminan las columnas completamente nulas
+df_music_master.drop(columns=nulas_completas, inplace=True)
+print("Se eliminaron las columnas con 100% nulos")
+
+# Se identifican columnas numericas
+columns_numericas = df_music_master.select_dtypes(include='number').columns
+
+# Cambiamos el numbre las columnas
+df_music_master = rename_columns_by_type(df_music_master)
+
+columnas_numericas =  df_music_master.filter(like="c_").columns
+
+indices_a_remover = identificar_outliers_iqr(df_music_master, columnas_numericas)
+print(f"Se encontraron {len(indices_a_remover)} filas con outliers, las cuales serán eliminadas.")
+df_music_master = df_music_master.drop(index=indices_a_remover)
+print(f"Dimensiones del DataFrame después de eliminar outliers: {df_music_master.shape}")
+
+## Detección y tratamiento de valores ausentes
+
+### Se eliminan columnas con más del 50% de valores nulos
+df_music_master = remove_high_null_columns(df_music_master, threshold=0.5)
+
+
+### Se imputan las columnas con entre 0% y 20% de nulos
+columns_with_nulls = get_columns_by_null_percentage(df_music_master, 0.0, 0.2)
+
+df_music_master_imputed = impute_missing_values(df_music_master,columns_to_impute=columns_with_nulls)
+
+print("Missing values after imputation:")
+print(df_music_master_imputed.isnull().sum() / df_music_master_imputed.shape[0])

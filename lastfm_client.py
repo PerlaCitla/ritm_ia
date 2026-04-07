@@ -519,6 +519,7 @@ def enrich_release_group_row_with_lastfm(row: pd.Series) -> dict:
         "lastfm_album_name": None,
         "lastfm_track_name": None,
         "lastfm_url": None,
+        "lastfm_error": None,
     }
 
     try:
