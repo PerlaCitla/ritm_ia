@@ -15,7 +15,7 @@ from sklearn.metrics import precision_recall_curve
 from sklearn.ensemble import RandomForestClassifier
 import xgboost as xgb
 ######################
-from my_functions.models_functions import train_decision_tree,evaluate_and_visualize_tree,evaluate_model_performance,prepare_data_and_train_rf,prepare_data_and_train_xgb,train_and_optimize_xgb
+from my_functions.supervised_functions import train_decision_tree,evaluate_and_visualize_tree,evaluate_model_performance,prepare_data_and_train_rf,prepare_data_and_train_xgb,train_and_optimize_xgb
 
 df_music_master = pd.read_csv('music_master_final_model.csv')
 
