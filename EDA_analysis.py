@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 
 
 #################
-from my_functions.eda_functions import tipo_variable,find_completely_null_columns,rename_columns_by_type,identificar_outliers_iqr,remove_high_null_columns,get_columns_by_null_percentage,impute_missing_values,encontrar_correlaciones_perfectas,save_correlation_heatmap,eliminar_variables_unitarias,graficar_histogramas
+from my_functions.eda_functions import tipo_variable,find_completely_null_columns,rename_columns_by_type,identificar_outliers_iqr,remove_high_null_columns,get_columns_by_null_percentage,impute_missing_values,encontrar_correlaciones_perfectas,save_correlation_heatmap,eliminar_variables_unitarias,graficar_histogramas,graficar_barras_discretas
 
 
 base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -142,4 +142,6 @@ save_correlation_heatmap(df_music_master_imputed, output_dir="outputs/images", f
 df, discretas, continuas = tipo_variable(df_music_master_imputed)
 
 graficar_histogramas(df_music_master_imputed, columnas=continuas)
+
+graficar_barras_discretas(df_music_master_imputed, columnas=discretas)
 
