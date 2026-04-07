@@ -3,9 +3,13 @@ import pandas as pd
 import numpy as np
 import os
 
+import plotly.express as px
+from plotly.subplots import make_subplots
+import plotly.graph_objects as go
+
 
 #################
-from my_functions.eda_functions import tipo_variable,find_completely_null_columns,rename_columns_by_type,identificar_outliers_iqr,remove_high_null_columns,get_columns_by_null_percentage,impute_missing_values
+from my_functions.eda_functions import tipo_variable,find_completely_null_columns,rename_columns_by_type,identificar_outliers_iqr,remove_high_null_columns,get_columns_by_null_percentage,impute_missing_values,encontrar_correlaciones_perfectas,save_correlation_heatmap,eliminar_variables_unitarias,graficar_histogramas
 
 
 base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -46,6 +50,8 @@ df_music_master.drop(columns=["trend_score_v0",
 
 print(df_music_master.shape)
 print(df_music_master.head())
+# print("\n=== TIPOS DE DATOS ANTES DE RENOMBRAR ===")
+# print(df_music_master.dtypes)
 
 # resumen_df, discretas, continuas = tipo_variable(df_music_master)
 
@@ -95,7 +101,45 @@ df_music_master = remove_high_null_columns(df_music_master, threshold=0.5)
 ### Se imputan las columnas con entre 0% y 20% de nulos
 columns_with_nulls = get_columns_by_null_percentage(df_music_master, 0.0, 0.2)
 
+print("Columnas a imputar:")
+print(columns_with_nulls)
+
 df_music_master_imputed = impute_missing_values(df_music_master,columns_to_impute=columns_with_nulls)
 
 print("Missing values after imputation:")
 print(df_music_master_imputed.isnull().sum() / df_music_master_imputed.shape[0])
+
+print("Para los registros que no tienen información en las columnas 'c_lb_total_listen_count' y 'c_lb_total_user_count' se crea una nueva variable que indica si estas variables tenian infromación o no")
+
+
+df_music_master_imputed["lb_total_listen_missing"] = df_music_master_imputed["c_lb_total_listen_count"].isna().astype(int)
+
+df_music_master_imputed[["c_lb_total_listen_count", "c_lb_total_user_count"]] = df_music_master_imputed[["c_lb_total_listen_count", "c_lb_total_user_count"]].fillna(0)
+
+print(df_music_master_imputed.isnull().sum() / df_music_master_imputed.shape[0])
+
+print("Hasta este punto se han tratado los valores ausentes y los valores extremos")
+
+### Deteccion de variables Altamente correlacionadas
+
+print(encontrar_correlaciones_perfectas(df_music_master_imputed))
+
+df_music_master_imputed.drop(columns=['c_log1p_lb_total_listen_count'], inplace=True)
+
+print("Se eliminó la columna 'c_log1p_lb_total_listen_count' debido a su alta correlación con 'c_lb_total_listen_count'")
+
+save_correlation_heatmap(df_music_master_imputed, output_dir="outputs/images", filename="correlation_heatmap.png")
+
+### Eliminación de variables uniarias
+
+df_music_master_imputed = eliminar_variables_unitarias(df_music_master_imputed)
+
+save_correlation_heatmap(df_music_master_imputed, output_dir="outputs/images", filename="new_correlation_heatmap.png")
+
+### Visualización de variables
+
+
+df, discretas, continuas = tipo_variable(df_music_master_imputed)
+
+graficar_histogramas(df_music_master_imputed, columnas=continuas)
+
