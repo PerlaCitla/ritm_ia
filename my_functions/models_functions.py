@@ -1,11 +1,16 @@
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import KernelPCA, PCA
 import re
 import unicodedata
 from stylecloud import gen_stylecloud
 from PIL import Image
+import matplotlib.pyplot as plt
 import os
+
+from gensim.models import Word2Vec
+from nltk.tokenize import word_tokenize
 
 
 
@@ -57,3 +62,76 @@ def clean_text(text, pattern="[^a-zA-Z0-9 ]"):
     cleaned_text = re.sub(pattern, " ", cleaned_text.decode("utf-8"), flags=re.UNICODE)
     cleaned_text = u' '.join(cleaned_text.lower().split())
     return cleaned_text
+
+
+def create_embeddings_with_word2vec(df: pd.DataFrame, text_column: str, vector_size: int = 100, window: int = 5, min_count: int = 1, workers: int = 4) -> np.ndarray:
+    """
+    Genera embeddings para una columna de texto utilizando Word2Vec.
+
+    Args:
+        df (pd.DataFrame): DataFrame de entrada.
+        text_column (str): Nombre de la columna que contiene el texto concatenado.
+        vector_size (int, optional): Dimensionalidad de los vectores de palabras. Por defecto es 100.
+        window (int, optional): Distancia máxima entre la palabra actual y la predicha. Por defecto es 5.
+        min_count (int, optional): Ignora todas las palabras con frecuencia total inferior a este. Por defecto es 1.
+        workers (int, optional): Número de hilos de trabajo para entrenar el modelo. Por defecto es 4.
+
+    Returns:
+        np.ndarray: Un array NumPy con los embeddings para cada registro del DataFrame.
+    """
+    # 1. Tokenizar el texto
+    tokenized_sentences = [word_tokenize(text) for text in df[text_column].astype(str)]
+
+    # 2. Entrenar el modelo Word2Vec
+    # Asegúrate de que las sentencias tokenizadas no estén vacías
+    cleaned_tokenized_sentences = [s for s in tokenized_sentences if s]
+    if not cleaned_tokenized_sentences:
+        print("Advertencia: No hay frases válidas para entrenar Word2Vec. Retornando un array vacío.")
+        return np.array([])
+
+    word2vec_model = Word2Vec(
+        sentences=cleaned_tokenized_sentences,
+        vector_size=vector_size,
+        window=window,
+        min_count=min_count,
+        workers=workers
+    )
+
+    # 3. Función para obtener el vector de una frase (promedio de vectores de palabras)
+    def get_sentence_vector(sentence_tokens, model, vector_size):
+        vectors = []
+        for word in sentence_tokens:
+            if word in model.wv:
+                vectors.append(model.wv[word])
+        if vectors:
+            return np.mean(vectors, axis=0)
+        else:
+            return np.zeros(vector_size) # Retorna un vector de ceros si no hay palabras en el vocabulario
+
+    # 4. Generar embeddings para cada fila del DataFrame original
+    embeddings = np.array([
+        get_sentence_vector(word_tokenize(text), word2vec_model, vector_size)
+        for text in df[text_column].astype(str)
+    ])
+
+    return embeddings
+
+def plot_pca_variance(embeddings, n_components=20, subcarpeta="outputs/dim_reduc"):
+    pca = PCA(n_components=n_components)
+    pca.fit(embeddings)
+
+    plt.figure()
+    plt.grid(True)
+    plt.plot(np.cumsum(pca.explained_variance_ratio_ * 100))
+    plt.xlabel('Nummero de componentes')
+    plt.ylabel('Varianza Explicada')
+
+    # Crear la subcarpeta si no existe y guardar la imagen
+    os.makedirs(subcarpeta, exist_ok=True)
+    ruta_guardado = os.path.join(subcarpeta, "pca_variance.png")
+    plt.savefig(ruta_guardado)
+    print(f"Gráfico guardado en: {ruta_guardado}")
+
+    # plt.show()
+
+    return pca

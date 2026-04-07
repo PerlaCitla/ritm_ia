@@ -9,6 +9,7 @@ dependencies = [
     "gensim>=4.4.0",
     "kaleido>=1.2.0",
     "matplotlib>=3.10.8",
+    "nltk>=3.9.4",
     "numpy>=2.4.4",
     "openai>=2.30.0",
     "pandas>=3.0.2",
