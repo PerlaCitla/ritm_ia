@@ -23,4 +23,5 @@ dependencies = [
     "stylecloud>=0.5.2",
     "tensorflow>=2.21.0",
     "xgboost>=3.2.0",
+    "yellowbrick>=1.5",
 ]

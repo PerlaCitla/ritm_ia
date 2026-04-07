@@ -46,6 +46,7 @@ from tensorflow.keras.preprocessing.sequence import pad_sequences
 # Model performance
 from sklearn.metrics import accuracy_score, confusion_matrix
 from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.decomposition import KernelPCA, PCA
 
 # # Environment setup
 # cf.go_offline()
@@ -59,8 +60,8 @@ from sklearn.model_selection import train_test_split
 
 
 #################################
-from my_functions.models_functions import concatenate_features,get_wordcloud,clean_text,create_embeddings_with_word2vec,plot_pca_variance
-
+from my_functions.models_functions import concatenate_features,get_wordcloud,clean_text,create_embeddings_with_word2vec,plot_pca_variance,plot_kmeans_elbow,plot_pca_kmeans_3d,plot_cluster_feature_distribution
+from my_functions.eda_functions import tipo_variable
 
 df_music_master = pd.read_csv("music_master_final_model.csv")
 df_music_master.drop(columns=["t_lastfm_source_used"], inplace=True)
@@ -226,4 +227,39 @@ df_pca_3 = pd.DataFrame(pca_3.transform(train_embeddings), columns=['PC1', 'PC2'
 # Definicion de clusters
 # CODO - KMeans
 
+visualizer = plot_kmeans_elbow(df_pca_3)
 
+print("Se elige k=4 para el clustering, ya que es el punto donde la curva comienza a estabilizarse (codo)")
+
+df_music_master_reducedimentions = df_music_master_processed.copy()
+df_music_master_reducedimentions, kmeans_pca, pca_3d = plot_pca_kmeans_3d(
+    df_music_master_reducedimentions, 
+    train_embeddings, 
+    k=4)
+
+print("Debido a poder de computo, se queda con la reducción de dimensiones de PCA a 3 componentes y 4 clusters definidos por KMeans")
+
+
+cols = [col for col in df_music_master_processed.columns if col.startswith('c_')]
+
+print("Las columnas que son numericas para ver su distribución por cluster son: ", cols)
+
+df_music_master['cluster'] = df_music_master_reducedimentions['cluster']
+
+print(df_music_master.groupby('cluster')[cols].describe())
+
+df_music_master.groupby('cluster')[cols].describe().to_csv("outputs/dim_reduc/cluster_descriptions.csv")
+
+df, discretas, continuas = tipo_variable(df_music_master)
+discretas.remove('t_release_group_id')
+discretas.remove('t_artist_ids')
+discretas.remove('t_lastfm_url')
+discretas.remove('t_title')
+discretas.remove('t_artist_name')
+discretas.remove('t_artist_name_meta')
+#discretas.remove('lastfm_tags_item')
+discretas.remove('t_lastfm_album_name')
+discretas.remove('d_first_release_date')
+
+for i in discretas:
+  plot_cluster_feature_distribution(df=df_music_master,cluster_column='cluster',feature_column=i,is_binary=False,treat_as_category=True)
