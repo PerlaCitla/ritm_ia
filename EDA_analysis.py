@@ -141,7 +141,12 @@ save_correlation_heatmap(df_music_master_imputed, output_dir="outputs/images", f
 
 df, discretas, continuas = tipo_variable(df_music_master_imputed)
 
-graficar_histogramas(df_music_master_imputed, columnas=continuas)
+# graficar_histogramas(df_music_master_imputed, columnas=continuas)
 
-graficar_barras_discretas(df_music_master_imputed, columnas=discretas)
+# graficar_barras_discretas(df_music_master_imputed, columnas=discretas)
+
+df_music_master_imputed.to_csv('music_master_final_clean.csv', index=False)
+print(f"Archivo 'music_master_final_clean.csv' guardado exitosamente. Dimensiones finales: {df_music_master_imputed.shape}")
+
+
 

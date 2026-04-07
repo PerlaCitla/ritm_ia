@@ -1,0 +1,70 @@
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import os
+
+def feature_engineering(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Aplica ingeniería de variables para extraer nuevas características
+    basadas en engagement, temporalidad y texto.
+    """
+    df_fe = df.copy()
+
+    # Convertir fecha a datetime por si no lo está
+    df_fe['d_first_release_date'] = pd.to_datetime(df_fe['d_first_release_date'], errors='coerce')
+
+    # Características Temporales
+    df_fe['v_release_month'] = df_fe['d_first_release_date'].dt.month.fillna(0).astype(int) # mes de lanzamiento
+    df_fe['v_release_dayofweek'] = df_fe['d_first_release_date'].dt.dayofweek.fillna(-1).astype(int) # 0=Lunes, 6=Domingo
+    df_fe['v_is_weekend_release'] = df_fe['v_release_dayofweek'].isin([4, 5, 6]).astype(int) # Viernes a Domingo (1), Lunes a Jueves (0)
+    df_fe['v_release_quarter'] = df_fe['d_first_release_date'].dt.quarter
+    df_fe['v_day_of_year'] = df_fe['d_first_release_date'].dt.dayofyear.fillna(0).astype(int)
+    df_fe['v_is_holiday_season'] = df_fe['v_release_month'].isin([11, 12, 6, 7]).astype(int)
+   
+    # Características de Texto
+    df_fe['c_title_length'] = df_fe['t_title'].astype(str).apply(len)
+    df_fe['c_artist_name_length'] = df_fe['t_artist_name'].astype(str).apply(len)
+    df_fe['c_title_word_count'] = df_fe['t_title'].astype(str).apply(lambda x: len(x.split()))
+    df_fe['v_title_has_parentheses'] = df_fe['t_title'].astype(str).str.contains(r'\(|\)', regex=True).astype(int)
+    
+    df_fe['v_is_eponymous'] = (df_fe['t_title'].astype(str).str.lower() == df_fe['t_artist_name'].astype(str).str.lower()).astype(int) 
+    
+    # Detectar si es una colaboración basada en el título o el nombre del artista
+    collab_pattern = r'feat\.|ft\.|&| x '
+    df_fe['v_is_collab'] = (
+        df_fe['t_title'].astype(str).str.contains(collab_pattern, case=False, na=False) |
+        df_fe['t_artist_name'].astype(str).str.contains(collab_pattern, case=False, na=False)
+    ).astype(int)
+
+    # Count-based features from delimited string columns
+    df_fe['c_num_artists'] = df_fe['t_artist_ids'].astype(str).apply(lambda x: len(x.split('|')) if pd.notna(x) else 0)
+    # df_fe['c_num_tags'] = df_fe['lastfm_tags_item'].astype(str).apply(lambda x: len(x.split('|')) if x != 'missing_tags' and pd.notna(x) else 0)
+
+
+    return df_fe
+
+def create_target_variable(df: pd.DataFrame, threshold_percentile: float = 0.75) -> pd.DataFrame:
+    """
+    Crea una variable objetivo binaria para predecir si un lanzamiento
+    es un 'éxito' basado en la estimación de sus primeros 30 días.
+    """
+    df_target = df.copy()
+
+    # Como c_lastfm_playcount fue eliminada, usaremos c_lastfm_listeners para estimar la tracción por día
+    # y luego proyectarla a 30 días.
+    df_target['c_lastfm_listeners_per_day'] = df_target['c_lastfm_listeners'] / df_target['c_days_since_release'].replace(0, 1)
+
+    # 1. Estimar oyentes en los primeros 30 días (asumiendo ritmo lineal)
+    df_target['c_estimated_30d_listeners'] = df_target['c_lastfm_listeners_per_day'] * 30
+
+    # 2. Definir el umbral de éxito basado en un percentil (ej. Top 25%)
+    umbral_exito = df_target['c_estimated_30d_listeners'].quantile(threshold_percentile)
+
+    # 3. Crear la variable binaria (1 = Éxito, 0 = No Éxito)
+    df_target['target_success_30d'] = (df_target['c_estimated_30d_listeners'] >= umbral_exito).astype(int)
+
+    print(f"Umbral de éxito (Percentil {threshold_percentile*100}%): {umbral_exito:,.2f} oyentes estimados en 30 días.")
+    print("\nDistribución de la variable objetivo:")
+    print(df_target['target_success_30d'].value_counts(normalize=True) * 100)
+
+    return df_target
