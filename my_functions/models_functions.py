@@ -19,6 +19,11 @@ from stylecloud import gen_stylecloud
 from gensim.models import Word2Vec
 from nltk.tokenize import word_tokenize
 
+from keras.layers import Input, Dense, Dropout
+from keras.models import Sequential
+from keras.callbacks import ModelCheckpoint, EarlyStopping
+import plotly.io as pio
+
 
 
 def concatenate_features(df: pd.DataFrame, target_column: str = None) -> pd.DataFrame:
@@ -293,3 +298,75 @@ def plot_cluster_feature_distribution(df: pd.DataFrame,
     print(f"Gráfico guardado en: {ruta_guardado}")
     
     # plt.show()
+
+def train_cluster_model(cluster_id, X_train_c, y_train_c, class_weight_c, epochs=50, batch_size=1024):
+    """
+    Entrena un modelo Sequential de Keras para un cluster específico,
+    grafica el historial de entrenamiento y guarda la imagen.
+    """
+    # Define the model
+    model = Sequential()
+    model.add(Input(shape=(X_train_c.shape[1],)))
+    model.add(Dense(128, activation='relu'))
+    model.add(Dropout(0.2))
+    model.add(Dense(64, activation='relu'))
+    model.add(Dropout(0.2))
+    model.add(Dense(1, activation='sigmoid'))
+
+    # Compile the model
+    model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+
+    # Create a specific ModelCheckpoint
+    os.makedirs('models', exist_ok=True)
+    checkpoint_path = f'models/model_c{cluster_id}_best.keras'
+    checkpoint = ModelCheckpoint(checkpoint_path,
+                                 save_best_only=True,
+                                 save_weights_only=False,
+                                 monitor='val_accuracy',
+                                 verbose=1)
+
+    early_stopping = EarlyStopping(monitor='val_accuracy', patience=15, min_delta=0.0001)
+
+    # Train the model
+    print(f"Training model for Cluster {cluster_id}...")
+    history = model.fit(
+        X_train_c,
+        y_train_c,
+        epochs=epochs,
+        batch_size=batch_size,
+        validation_split=0.2,
+        callbacks=[early_stopping, checkpoint],
+        verbose=1,
+        class_weight=class_weight_c
+    )
+
+    # Convert history to DataFrame
+    results = pd.DataFrame(history.history)
+
+    # Visualization with Matplotlib to easily save as PNG
+    fig, axes = plt.subplots(1, 2, figsize=(15, 5))
+    
+    # Plot Accuracy
+    axes[0].plot(results[['accuracy', 'val_accuracy']])
+    axes[0].set_title(f'Cluster {cluster_id} - Model Accuracy')
+    axes[0].set_ylabel('Accuracy')
+    axes[0].set_xlabel('Epoch')
+    axes[0].legend(['Train', 'Validation'], loc='lower right')
+    
+    # Plot Loss
+    axes[1].plot(results[['loss', 'val_loss']])
+    axes[1].set_title(f'Cluster {cluster_id} - Model Loss')
+    axes[1].set_ylabel('Loss')
+    axes[1].set_xlabel('Epoch')
+    axes[1].legend(['Train', 'Validation'], loc='upper right')
+
+    # Save the plot in outputs/dim_reduc
+    output_dir = "outputs/dim_reduc"
+    os.makedirs(output_dir, exist_ok=True)
+    plot_path = os.path.join(output_dir, f"history_model_c{cluster_id}.png")
+    plt.savefig(plot_path, bbox_inches='tight')
+    print(f"\nGráfico de historial guardado en: {plot_path}")
+
+    #plt.show()
+
+    return model, history
