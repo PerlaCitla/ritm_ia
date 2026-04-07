@@ -243,3 +243,87 @@ def prepare_data_and_train_xgb(df_ml, target_xgb='target_success_30d'):
     y_pred_test_xgb = xgboostc.predict(X_test_xgb)
 
     evaluate_model_performance(xgboostc, X_test_xgb, y_train_xgb, y_pred_train_xgb, y_test_xgb, y_pred_test_xgb, model_name="XGBoost", filename="precision_recall_curve_xgboost.png")
+
+def train_and_optimize_xgb(df_ml, target_xgb='target_success_30d'):
+    # 2. Prevenir fuga de datos para este problema
+    cols_to_drop_xgb = [
+        target_xgb,
+        'c_estimated_30d_listeners',   # Esta es la causa más probable de la fuga de datos
+        'c_lastfm_listeners_per_day',  # También es una métrica derivada que podría causar fuga
+        'c_estimated_30d_playcount',   # Variable base con la que se calculó el target
+        'c_lastfm_plays_per_day',      # Altamente correlacionada con la estimación 30d
+        'c_trend_score_v0',            # Target de regresión
+        'c_score_popularity',
+        'c_score_users',
+        'c_score_recency',
+        'c_lb_total_user_count',
+        'c_lb_total_listen_count',
+        'c_estimated_30d_lsiteners',   # Variable base con la que se calculó el target
+        'c_lastfm_listeners',
+        'c_lastfm_playcount'
+    ]
+
+    # Asegurarse de que solo se intenten eliminar columnas que realmente existen en df_ml
+    existing_cols_to_drop_xgb = [col for col in cols_to_drop_xgb if col in df_ml.columns]
+
+    # Obtener todas las columnas numéricas
+    numeric_features = df_ml.select_dtypes(include=['number']).columns.tolist()
+
+    # Definir features_xgb excluyendo las columnas identificadas para evitar fuga de datos
+    features_xgb = [col for col in numeric_features if col not in existing_cols_to_drop_xgb]
+
+    X_xgb = df_ml[features_xgb]
+    y_xgb = df_ml[target_xgb]
+
+    # 3. Dividir datos (Train/Test)
+    X_train_xgb, X_test_xgb, y_train_xgb, y_test_xgb = train_test_split(
+        X_xgb, y_xgb, test_size=0.2, random_state=42, stratify=y_xgb
+    )
+
+    print(f"Variables predictoras usadas: {len(features_xgb)}")
+
+    # 4. Entrenar el modelo XGBoost
+    xgboostc = xgb.XGBClassifier(
+        n_estimators=100,
+        learning_rate=0.05,
+        max_depth=3,
+        scale_pos_weight=(len(y_train_xgb) - sum(y_train_xgb)) / sum(y_train_xgb),
+        random_state=42,
+        eval_metric='logloss'
+    )
+
+    xgboostc.fit(X_train_xgb, y_train_xgb)
+
+    # Predicciones estándar (umbral 0.5)
+    y_pred_train_xgb = xgboostc.predict(X_train_xgb)
+    y_pred_test_xgb = xgboostc.predict(X_test_xgb)
+
+    print("\nModelo de Clasificación entrenado exitosamente.")
+
+    print("\nReporte de clasificación estándar:")
+    print(classification_report(y_test_xgb, y_pred_test_xgb))
+
+    # Curva precision-recall validación
+    y_scores = xgboostc.predict_proba(X_test_xgb)
+    precisions, recalls, trhs = precision_recall_curve(y_test_xgb, y_scores[:,1])
+
+
+    # --- CÁLCULO DE LA NUEVA VARIABLE new_threshold_xgb ---
+    # Vamos a encontrar el umbral óptimo que maximice el F1-Score basándonos en la curva PR
+    f1_scores = 2 * (precisions * recalls) / (precisions + recalls + 1e-10)
+    optimal_idx = np.argmax(f1_scores)
+    # Aseguramos no salir de índice
+    new_threshold_xgb = trhs[optimal_idx] if optimal_idx < len(trhs) else 0.5
+
+    print(f"\n--- Umbral óptimo calculado (Maximiza F1) ---")
+    print(f"new_threshold_xgb = {new_threshold_xgb:.4f}")
+
+    # Aplicar el nuevo umbral calculado
+    y_pred_adjusted_xgb = (y_scores[:, 1] >= new_threshold_xgb).astype(int)
+
+    print(f"\nReporte de clasificación con el umbral ajustado ({new_threshold_xgb:.4f}):")
+    print(classification_report(y_test_xgb, y_pred_adjusted_xgb))
+
+    evaluate_model_performance(xgboostc, X_test_xgb, y_train_xgb, y_pred_train_xgb, y_test_xgb, y_pred_adjusted_xgb, model_name="XGBoost (Umbral Ajustado)", filename="precision_recall_curve_xgboost_adjusted.png")
+    
+    return xgboostc, new_threshold_xgb, X_train_xgb, X_test_xgb, y_train_xgb, y_test_xgb
