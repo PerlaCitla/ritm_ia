@@ -76,9 +76,19 @@ def clean_text(text, pattern="[^a-zA-Z0-9 ]"):
     return cleaned_text
 
 
-def create_embeddings_with_word2vec(df: pd.DataFrame, text_column: str, vector_size: int = 100, window: int = 5, min_count: int = 1, workers: int = 4) -> np.ndarray:
+def create_embeddings_with_word2vec(df: pd.DataFrame,
+                                    text_column: str,
+                                    vector_size: int = 100,
+                                    window: int = 5,
+                                    min_count: int = 1,
+                                    workers: int = 4,
+                                    save_model_path: str = None,
+                                    load_model_path: str = None) -> np.ndarray:
     """
     Genera embeddings para una columna de texto utilizando Word2Vec.
+
+    Si se especifica `load_model_path`, carga un Word2Vec preentrenado y usa ese vocabulario.
+    Si se especifica `save_model_path`, guarda el modelo entrenado para usarlo después en test.
 
     Args:
         df (pd.DataFrame): DataFrame de entrada.
@@ -87,29 +97,37 @@ def create_embeddings_with_word2vec(df: pd.DataFrame, text_column: str, vector_s
         window (int, optional): Distancia máxima entre la palabra actual y la predicha. Por defecto es 5.
         min_count (int, optional): Ignora todas las palabras con frecuencia total inferior a este. Por defecto es 1.
         workers (int, optional): Número de hilos de trabajo para entrenar el modelo. Por defecto es 4.
+        save_model_path (str, optional): Ruta donde guardar el modelo Word2Vec entrenado.
+        load_model_path (str, optional): Ruta desde donde cargar un modelo Word2Vec existente.
 
     Returns:
         np.ndarray: Un array NumPy con los embeddings para cada registro del DataFrame.
     """
     # 1. Tokenizar el texto
     tokenized_sentences = [word_tokenize(text) for text in df[text_column].astype(str)]
-
-    # 2. Entrenar el modelo Word2Vec
-    # Asegúrate de que las sentencias tokenizadas no estén vacías
     cleaned_tokenized_sentences = [s for s in tokenized_sentences if s]
-    if not cleaned_tokenized_sentences:
-        print("Advertencia: No hay frases válidas para entrenar Word2Vec. Retornando un array vacío.")
-        return np.array([])
 
-    word2vec_model = Word2Vec(
-        sentences=cleaned_tokenized_sentences,
-        vector_size=vector_size,
-        window=window,
-        min_count=min_count,
-        workers=workers
-    )
+    if load_model_path:
+        word2vec_model = Word2Vec.load(load_model_path)
+    else:
+        if not cleaned_tokenized_sentences:
+            print("Advertencia: No hay frases válidas para entrenar Word2Vec. Retornando un array vacío.")
+            return np.array([])
 
-    # 3. Función para obtener el vector de una frase (promedio de vectores de palabras)
+        word2vec_model = Word2Vec(
+            sentences=cleaned_tokenized_sentences,
+            vector_size=vector_size,
+            window=window,
+            min_count=min_count,
+            workers=workers
+        )
+
+        if save_model_path:
+            os.makedirs(os.path.dirname(save_model_path), exist_ok=True)
+            word2vec_model.save(save_model_path)
+            print(f"Word2Vec guardado en: {save_model_path}")
+
+    # 2. Función para obtener el vector de una frase (promedio de vectores de palabras)
     def get_sentence_vector(sentence_tokens, model, vector_size):
         vectors = []
         for word in sentence_tokens:
@@ -118,9 +136,9 @@ def create_embeddings_with_word2vec(df: pd.DataFrame, text_column: str, vector_s
         if vectors:
             return np.mean(vectors, axis=0)
         else:
-            return np.zeros(vector_size) # Retorna un vector de ceros si no hay palabras en el vocabulario
+            return np.zeros(vector_size)
 
-    # 4. Generar embeddings para cada fila del DataFrame original
+    # 3. Generar embeddings para cada fila del DataFrame original
     embeddings = np.array([
         get_sentence_vector(word_tokenize(text), word2vec_model, vector_size)
         for text in df[text_column].astype(str)

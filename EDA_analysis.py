@@ -15,7 +15,7 @@ from my_functions.eda_functions import tipo_variable,find_completely_null_column
 base_dir = os.path.dirname(os.path.abspath(__file__))
 file_path = os.path.join(base_dir, 'inputs')
 
-df_music_master = pd.read_csv(os.path.join(file_path, 'music_master_2025_final_clean_20260401.csv'))
+df_music_2025 = pd.read_csv(os.path.join(file_path, 'music_master_2025_final_clean_20260401.csv'))
 df_music_2024 = pd.read_csv(os.path.join(file_path, 'music_master_2024_final_clean_20260401.csv'))
 df_music_2023 = pd.read_csv(os.path.join(file_path, 'music_master_2023_final_clean_20260402.csv'))
 df_music_2022 = pd.read_csv(os.path.join(file_path, 'music_master_2022_final_clean_20260402.csv'))
@@ -35,8 +35,10 @@ df_music_2009 = pd.read_csv(os.path.join(file_path, 'music_master_2009_final_cle
 df_music_2008 = pd.read_csv(os.path.join(file_path, 'music_master_2008_final_clean_20260405.csv'))
 df_music_2007 = pd.read_csv(os.path.join(file_path, 'music_master_2007_final_clean_20260405.csv'))
 df_music_2006 = pd.read_csv(os.path.join(file_path, 'music_master_2006_final_clean_20260405.csv'))
+df_music_2005 = pd.read_csv(os.path.join(file_path, 'music_master_2005_final_clean_20260405.csv'))
+df_music_2024 = pd.read_csv(os.path.join(file_path, 'music_master_2004_final_clean_20260406.csv'))
 
-df_music_master = pd.concat([df_music_master, df_music_2024,df_music_2023,df_music_2021,df_music_2020,df_music_2019,df_music_2018,df_music_2017,df_music_2016,df_music_2015,df_music_2014,df_music_2013,df_music_2012,df_music_2011,df_music_2009,df_music_2008,df_music_2006])
+df_music_master = pd.concat([df_music_2025, df_music_2024,df_music_2023,df_music_2021,df_music_2020,df_music_2019,df_music_2018,df_music_2017,df_music_2016,df_music_2015,df_music_2014,df_music_2013,df_music_2012,df_music_2011,df_music_2009,df_music_2008,df_music_2006])
 
 df_music_master.reset_index(drop=True, inplace=True)
 
@@ -46,7 +48,7 @@ df_music_master.drop(columns=["trend_score_v0",
                           "score_users",
                           "score_sitewide",
                           "score_artist_strength",
-                          "score_recency"], inplace=True)
+                          "score_recency","lastfm_source_used"], inplace=True)
 
 print(df_music_master.shape)
 print(df_music_master.head())

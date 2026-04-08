@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "factor-analyzer>=0.5.1",
     "gensim>=4.4.0",
+    "imbalanced-learn>=0.14.1",
     "kaleido>=1.2.0",
     "matplotlib>=3.10.8",
     "nltk>=3.9.4",

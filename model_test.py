@@ -41,8 +41,8 @@ from nltk.corpus import stopwords
 from sklearn.preprocessing import LabelEncoder
 
 from tensorflow.keras.preprocessing.text import Tokenizer
-from tensorflow.keras.utils import to_categorical
-from tensorflow.keras.preprocessing.sequence import pad_sequences
+# from tensorflow.keras.utils import to_categorical
+# from tensorflow.keras.preprocessing.sequence import pad_sequences
 from sklearn.utils.class_weight import compute_class_weight
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 
@@ -70,6 +70,10 @@ from my_functions.eda_functions import tipo_variable
 X_test = pd.read_csv("X_test.csv")
 y_test = pd.read_csv("y_test.csv")
 
+print("X_test columns: ", X_test.columns)
+
+# X_test.drop(columns=["t_lastfm_source_used"], inplace=True)
+
 pca_3_kpca = joblib.load("models/pca_3_components.pkl")
 kmeans_pca_kernel = joblib.load("models/kmeans_pca_4_clusters.pkl")
 
@@ -93,9 +97,15 @@ X_test_processed['concatenated_features'] = X_test_processed['concatenated_featu
 X_test_processed['concatenated_features'] = X_test_processed['concatenated_features'].apply(lambda x: re.sub(r'\b[a-zA-Z]{1,2}\b', ' ', x) if pd.notnull(x) else x)
 X_test_processed['concatenated_features'] = X_test_processed['concatenated_features'].apply(lambda x: re.sub(r'\s+', ' ', x).strip() if pd.notnull(x) else x)
 
-# 2. Generar embeddings para X_test
-# Nota: esto entrena un nuevo word2vec temporal. Lo ideal sería usar el modelo w2v guardado.
-test_embeddings = create_embeddings_with_word2vec(X_test_processed, 'concatenated_features')
+# 2. Generar embeddings para X_test usando el mismo modelo Word2Vec entrenado en el conjunto de entrenamiento
+test_embeddings = create_embeddings_with_word2vec(
+    X_test_processed,
+    'concatenated_features',
+    load_model_path='models/word2vec.model'
+)
+
+print("Dimensiones de los embeddings de test generados: ")
+print(test_embeddings.shape)
 
 # 3. Reducción a 3 componentes con el PCA KERNEL ya entrenado y predicción de los 4 clusters
 # Usamos pca_3_kpca y kmeans_pca_kernel definidos previamente
@@ -133,7 +143,9 @@ for c in range(4):
 X_test_processed['predicted_prob'] = np.nan
 X_test_processed['predicted_class'] = np.nan
 
-print("Realizando predicciones por cluster y ajustando umbral para maximizar F1-score...")
+print("Realizando predicciones por cluster y ajustando umbral para maximizar PRECISIÓN...")
+
+from sklearn.metrics import f1_score, precision_score, recall_score
 
 for c in sorted(X_test_processed['cluster_3d'].unique()):
     mask_c = X_test_processed['cluster_3d'] == c
@@ -149,13 +161,30 @@ for c in sorted(X_test_processed['cluster_3d'].unique()):
         # Predecir probabilidades
         probs = model.predict(X_test_c, verbose=0).flatten()
 
-        # Calcular el mejor umbral usando F1-score
-        from sklearn.metrics import f1_score
-        thresholds = np.arange(0.1, 0.9, 0.01)
-        f1_scores = [f1_score(y_test_c, (probs >= t).astype(int)) for t in thresholds]
-        best_threshold = thresholds[np.argmax(f1_scores)]
-        best_f1 = max(f1_scores)
-        print(f"  Mejor umbral para Cluster {c}: {best_threshold:.4f} (F1: {best_f1:.4f})")
+        # Buscar el umbral que maximice precisión manteniendo recall >= 0.2
+        thresholds = np.arange(0.1, 0.95, 0.01)
+        best_threshold = 0.5
+        best_precision = 0.0
+        best_recall = 0.0
+        best_f1 = 0.0
+        
+        for threshold in thresholds:
+            y_pred = (probs >= threshold).astype(int)
+            if y_pred.sum() == 0:  # Evitar división por cero
+                continue
+            prec = precision_score(y_test_c, y_pred, zero_division=0)
+            rec = recall_score(y_test_c, y_pred, zero_division=0)
+            f1 = f1_score(y_test_c, y_pred, zero_division=0)
+            
+            # Priorizar precisión pero mantener recall >= 0.2
+            if rec >= 0.2 and prec > best_precision:
+                best_threshold = threshold
+                best_precision = prec
+                best_recall = rec
+                best_f1 = f1
+        
+        print(f"  Umbral óptimo para Cluster {c}: {best_threshold:.4f}")
+        print(f"  Precisión: {best_precision:.4f} | Recall: {best_recall:.4f} | F1: {best_f1:.4f}")
 
         # Guardar probabilidades y clase predicha con el mejor umbral
         X_test_processed.loc[mask_c, 'predicted_prob'] = probs
@@ -169,7 +198,7 @@ print(X_test_processed[['t_title', 'cluster_3d', 'predicted_prob', 'predicted_cl
 
 # Filtrar índices válidos por si algún cluster no tuvo modelo y generó NaNs
 valid_indices = X_test_processed['predicted_class'].dropna().index
-y_true = y_test.loc[valid_indices]
+y_true = y_test.loc[valid_indices]  
 y_pred = X_test_processed.loc[valid_indices, 'predicted_class']
 
 # Exactitud Global (Accuracy)

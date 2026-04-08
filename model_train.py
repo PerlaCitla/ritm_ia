@@ -39,7 +39,7 @@ from nltk import word_tokenize
 from nltk.corpus import stopwords
 from sklearn.preprocessing import LabelEncoder
 
-# from tensorflow.keras.preprocessing.text import Tokenizer
+from tensorflow.keras.preprocessing.text import Tokenizer
 # from tensorflow.keras.utils import to_categorical
 # from tensorflow.keras.preprocessing.sequence import pad_sequences
 from sklearn.utils.class_weight import compute_class_weight
@@ -65,7 +65,7 @@ from my_functions.models_functions import concatenate_features,get_wordcloud,cle
 from my_functions.eda_functions import tipo_variable
 
 df_music_master = pd.read_csv("music_master_final_model.csv")
-df_music_master.drop(columns=["t_lastfm_source_used"], inplace=True)
+# df_music_master.drop(columns=["t_lastfm_source_used"], inplace=True)
 
 # Filtrar solo columnas numéricas
 df_num = df_music_master.select_dtypes(include=["number"])
@@ -208,8 +208,12 @@ tokenizer.fit_on_texts(df_music_master_processed["concatenated_features"].values
 word_index = tokenizer.word_index
 print('Found %s unique tokens.' % len(word_index))
 
-# Generar embeddings para el DataFrame
-train_embeddings = create_embeddings_with_word2vec(df_music_master_processed, 'concatenated_features')
+# Generar embeddings para el DataFrame y guardar el modelo Word2Vec usado en entrenamiento
+train_embeddings = create_embeddings_with_word2vec(
+    df_music_master_processed,
+    'concatenated_features',
+    save_model_path='models/word2vec.model'
+)
 print("Dimensiones de los embeddings generados: ", train_embeddings.shape)
 
 # Reduccion de dimensiones

@@ -4,8 +4,10 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, mean_absolute_error, r2_score
 from sklearn.metrics import precision_recall_curve
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import GridSearchCV
 import xgboost as xgb
 
+from imblearn.over_sampling import SMOTE
 import numpy as np
 import matplotlib.pyplot as plt
 import os
@@ -282,17 +284,48 @@ def train_and_optimize_xgb(df_ml, target_xgb='target_success_30d'):
 
     print(f"Variables predictoras usadas: {len(features_xgb)}")
 
-    # 4. Entrenar el modelo XGBoost
-    xgboostc = xgb.XGBClassifier(
-        n_estimators=100,
-        learning_rate=0.05,
-        max_depth=3,
+    # 4. Optimización de hiperparámetros con GridSearchCV
+    
+
+    # Definir el espacio de búsqueda de hiperparámetros
+    param_grid = {
+        'n_estimators': [100, 200, 300],
+        'learning_rate': [0.01, 0.05, 0.1],
+        'max_depth': [3, 5, 7],
+        'subsample': [0.8, 0.9, 1.0],
+        'colsample_bytree': [0.8, 0.9, 1.0]
+    }
+
+    # Crear el modelo base con scale_pos_weight para manejar desbalance
+    base_model = xgb.XGBClassifier(
         scale_pos_weight=(len(y_train_xgb) - sum(y_train_xgb)) / sum(y_train_xgb),
         random_state=42,
         eval_metric='logloss'
     )
 
-    xgboostc.fit(X_train_xgb, y_train_xgb)
+    # Realizar GridSearchCV
+    grid_search = GridSearchCV(
+        estimator=base_model,
+        param_grid=param_grid,
+        scoring='precision',  # Optimizar para precisión en clase positiva
+        cv=3,
+        verbose=1,
+        n_jobs=-1
+    )
+
+    # 4. Aplicar SMOTE para balancear las clases
+    
+    smote = SMOTE(random_state=42)
+    X_train_xgb_sm, y_train_xgb_sm = smote.fit_resample(X_train_xgb, y_train_xgb)
+    print(f"Después de SMOTE - X_train shape: {X_train_xgb_sm.shape}, y_train distribución: {y_train_xgb_sm.value_counts().to_dict()}")
+
+    # Usar los datos balanceados para GridSearchCV
+    grid_search.fit(X_train_xgb_sm, y_train_xgb_sm)
+
+    # Mejor modelo encontrado
+    xgboostc = grid_search.best_estimator_
+    print(f"Mejores hiperparámetros: {grid_search.best_params_}")
+    print(f"Mejor score de validación cruzada (precisión): {grid_search.best_score_:.4f}")
 
     # Predicciones estándar (umbral 0.5)
     y_pred_train_xgb = xgboostc.predict(X_train_xgb)
@@ -324,6 +357,8 @@ def train_and_optimize_xgb(df_ml, target_xgb='target_success_30d'):
     print(f"\nReporte de clasificación con el umbral ajustado ({new_threshold_xgb:.4f}):")
     print(classification_report(y_test_xgb, y_pred_adjusted_xgb))
 
-    evaluate_model_performance(xgboostc, X_test_xgb, y_train_xgb, y_pred_train_xgb, y_test_xgb, y_pred_adjusted_xgb, model_name="XGBoost (Umbral Ajustado)", filename="precision_recall_curve_xgboost_adjusted.png")
+    evaluate_model_performance(xgboostc, X_test_xgb, y_train_xgb, y_pred_train_xgb, y_test_xgb, y_pred_adjusted_xgb, model_name="XGBoost Optimizado", filename="precision_recall_curve_xgboost_optimized.png")
     
     return xgboostc, new_threshold_xgb, X_train_xgb, X_test_xgb, y_train_xgb, y_test_xgb
+
+

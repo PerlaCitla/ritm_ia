@@ -43,15 +43,18 @@ df_ml = df_music_master.copy()
 
 print(df_ml['target_success_30d'].value_counts())
 
-dtree, X_train_dtc, X_test_dtc, y_train_dtc, y_test_dtc, features_dtc = train_decision_tree(df_ml)
+# dtree, X_train_dtc, X_test_dtc, y_train_dtc, y_test_dtc, features_dtc = train_decision_tree(df_ml)
 
-y_pred_train_dtc, y_pred_test_dtc = evaluate_and_visualize_tree(dtree, X_train_dtc, X_test_dtc, features_dtc)
+# y_pred_train_dtc, y_pred_test_dtc = evaluate_and_visualize_tree(dtree, X_train_dtc, X_test_dtc, features_dtc)
 
-evaluate_model_performance(dtree, X_test_dtc, y_train_dtc, y_pred_train_dtc, y_test_dtc, y_pred_test_dtc,model_name="Decision Tree",filename="precision_recall_curve_decision_tree.png")
+# evaluate_model_performance(dtree, X_test_dtc, y_train_dtc, y_pred_train_dtc, y_test_dtc, y_pred_test_dtc,model_name="Decision Tree",filename="precision_recall_curve_decision_tree.png")
 
 
-prepare_data_and_train_rf(df_ml, target_rfc='target_success_30d')
+# prepare_data_and_train_rf(df_ml, target_rfc='target_success_30d')
 
-prepare_data_and_train_xgb(df_ml, target_xgb='target_success_30d')
+# prepare_data_and_train_xgb(df_ml, target_xgb='target_success_30d')
 
-train_and_optimize_xgb(df_ml, target_xgb='target_success_30d')
+xgboostc, new_threshold_xgb, X_train_xgb, X_test_xgb, y_train_xgb, y_test_xgb = train_and_optimize_xgb(df_ml, target_xgb='target_success_30d')
+
+# Se guarda el último modelo XGBoost optimizado
+xgboostc.save_model("models/xgboost_optimized.json")
