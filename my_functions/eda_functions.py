@@ -170,7 +170,7 @@ def identificar_outliers_iqr(df, columnas):
         
     return list(indices_outliers)
 
-def remove_high_null_columns(df: pd.DataFrame, threshold: float = 0.5) -> pd.DataFrame:
+def remove_high_null_columns(df: pd.DataFrame, threshold: float = 0.4) -> pd.DataFrame:
     """
     Elimina las columnas de un DataFrame que tienen un porcentaje de nulos
     mayor al umbral especificado.
@@ -186,7 +186,7 @@ def remove_high_null_columns(df: pd.DataFrame, threshold: float = 0.5) -> pd.Dat
     # Retorna el dataframe sin esas columnas
     return df.drop(columns=columns_to_drop)
 
-def get_columns_by_null_percentage(df: pd.DataFrame, min_pct: float = 0.0, max_pct: float = 0.2) -> list[str]:
+def get_columns_by_null_percentage(df: pd.DataFrame, min_pct: float = 0.0, max_pct: float = 0.39) -> list[str]:
     """
     Obtiene una lista de columnas cuyo porcentaje de nulos está dentro de un rango específico.
     """

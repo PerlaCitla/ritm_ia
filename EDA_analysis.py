@@ -36,9 +36,13 @@ df_music_2008 = pd.read_csv(os.path.join(file_path, 'music_master_2008_final_cle
 df_music_2007 = pd.read_csv(os.path.join(file_path, 'music_master_2007_final_clean_20260405.csv'))
 df_music_2006 = pd.read_csv(os.path.join(file_path, 'music_master_2006_final_clean_20260405.csv'))
 df_music_2005 = pd.read_csv(os.path.join(file_path, 'music_master_2005_final_clean_20260405.csv'))
-df_music_2024 = pd.read_csv(os.path.join(file_path, 'music_master_2004_final_clean_20260406.csv'))
+df_music_2004 = pd.read_csv(os.path.join(file_path, 'music_master_2004_final_clean_20260406.csv'))
 
-df_music_master = pd.concat([df_music_2025, df_music_2024,df_music_2023,df_music_2021,df_music_2020,df_music_2019,df_music_2018,df_music_2017,df_music_2016,df_music_2015,df_music_2014,df_music_2013,df_music_2012,df_music_2011,df_music_2009,df_music_2008,df_music_2006])
+df_music_master = pd.concat([df_music_2025,df_music_2024,df_music_2023,df_music_2022,df_music_2021,
+                             df_music_2020,df_music_2019,df_music_2018,df_music_2017,df_music_2016,
+                             df_music_2015,df_music_2014,df_music_2013,df_music_2012,df_music_2011,
+                             df_music_2010,df_music_2009,df_music_2008,df_music_2007,df_music_2006,
+                             df_music_2005,df_music_2004])
 
 df_music_master.reset_index(drop=True, inplace=True)
 
@@ -143,9 +147,8 @@ save_correlation_heatmap(df_music_master_imputed, output_dir="outputs/images", f
 
 df, discretas, continuas = tipo_variable(df_music_master_imputed)
 
-# graficar_histogramas(df_music_master_imputed, columnas=continuas)
-
-# graficar_barras_discretas(df_music_master_imputed, columnas=discretas)
+graficar_histogramas(df_music_master_imputed, columnas=continuas)
+graficar_barras_discretas(df_music_master_imputed, columnas=discretas)
 
 df_music_master_imputed.to_csv('music_master_final_clean.csv', index=False)
 print(f"Archivo 'music_master_final_clean.csv' guardado exitosamente. Dimensiones finales: {df_music_master_imputed.shape}")
