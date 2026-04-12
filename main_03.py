@@ -102,7 +102,44 @@ if "messages" not in st.session_state:
 for msg in st.session_state.messages:
     st.chat_message(msg["role"]).write(msg["content"])
 
-if prompt:= st.chat_input("Escribe tu mensaje aquí..."):
+# ==================== PREGUNTAS SUGERIDAS ====================
+# Contador para keys únicos de botones en cada renderizado
+if "button_key_counter" not in st.session_state:
+    st.session_state.button_key_counter = 0
+
+st.divider()
+st.markdown("**💡 Preguntas rápidas:**")
+
+suggested_questions = [
+    "🎯 Analiza los últimos 10 lanzamientos musicales",
+    "🎤 Cuéntame sobre el catálogo de The Weeknd",
+    "🔗 ¿Qué características definen el clúster 0?",
+    "📊 ¿Cuáles son las tendencias musicales de 2025?",
+]
+
+cols = st.columns(2)
+for idx, question in enumerate(suggested_questions):
+    col = cols[idx % 2]
+    # Usar un key único combinando índice y contador
+    button_key = f"suggested_{idx}_{st.session_state.button_key_counter}"
+    if col.button(question, use_container_width=True, key=button_key):
+        st.session_state.suggested_question = question.split(" ", 1)[1]  # Remover emoji
+        st.session_state.button_key_counter += 1  # Incrementar contador para próximos botones
+        st.rerun()
+
+st.divider()
+
+# Manejo de preguntas sugeridas
+if "suggested_question" in st.session_state:
+    prompt = st.session_state.suggested_question
+    del st.session_state.suggested_question
+else:
+    prompt = None
+
+if prompt is None:
+    prompt = st.chat_input("Escribe tu mensaje aquí...")
+
+if prompt:
     st.session_state.messages.append({"role": "user", "content": prompt})
     st.chat_message("user", avatar="👤").write(prompt)
     conversation = [{"role": "system", "content": stronger_prompt}]

@@ -26,6 +26,21 @@ descubrimiento musical, recomendaciones personalizadas, cultura musical, evoluci
 """
 
 # ============================================
+# Execution Constraints
+# ============================================
+execution_constraints = r"""
+⏳ **Regla estricta de tiempo de espera (Nuevos Lanzamientos):**
+Si el usuario solicita alguna de las siguientes condiciones:
+- Analizar más de 10 lanzamientos (`n_releases` > 10).
+- Buscar en un periodo mayor a 10 días hacia atrás (`days_back` > 10).
+
+**NO ejecutes la herramienta inmediatamente**.
+1. Haz una pausa y adviértele de forma amable que procesar esa cantidad de días o lanzamientos tomará mucho tiempo (varios minutos).
+2. Recomiéndale reducir la cantidad a un máximo de 10 lanzamientos y 10 días para una experiencia más rápida.
+3. Pregúntale si desea continuar con su petición original de todos modos o si prefiere ajustarla. Solo ejecuta la herramienta si te da su confirmación afirmativa tras la advertencia.
+"""
+
+# ============================================
 # Goal Priming
 # ============================================
 goal_section = r"""
