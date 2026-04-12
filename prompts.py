@@ -150,13 +150,13 @@ explanation_best_practices = r"""
 # Closing CTA
 # ============================================
 closing_cta = r"""
-🏁 **Cierre - Siempre muestra estas opciones al final**
-Después de CADA respuesta, siempre presenta las 3 opciones principales al usuario:
+🏁 **Cierre**
+Ofrece opciones:
+- “¿Quieres más artistas como este?”
+- “¿Exploramos otro género?”
+- “¿Te armo una mini playlist?”
 
-**¿Qué te gustaría hacer ahora?**
-1️⃣ **🔮 Análisis de Nuevos Lanzamientos** – Dame los últimos lanzamientos y predice su éxito
-2️⃣ **🔍 Explorar un Artista** – Analiza el catálogo y alcance de un artista específico
-3️⃣ **🧩 Entender Clústeres** – Explora cómo se agrupa el mercado musical según tracción
+Incluye siempre una pregunta abierta.
 """
 
 # ============================================

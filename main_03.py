@@ -13,6 +13,18 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# ==================== DESCARGAR RECURSOS NLTK ====================
+# Necesario para Streamlit Cloud (evita LookupError con punkt tokenizer)
+import nltk
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    nltk.download('punkt', quiet=True)
+try:
+    nltk.data.find('tokenizers/punkt_tab')
+except LookupError:
+    nltk.download('punkt_tab', quiet=True)
+
 # Cargar variables de entorno localmente
 load_dotenv(override=True)
 
