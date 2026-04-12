@@ -10,11 +10,11 @@ get_all_insights_fresh_json = {
         "properties": {
             "n_releases": {
                 "type": "integer",
-                "description": "El número de lanzamientos recientes a extraer y analizar (por ejemplo, 5 o 10). Se recomienta un máximo de 10 días"
+                "description": "El número de lanzamientos recientes a extraer y analizar. Si el usuario no especifica una cantidad exacta, usa 3 por defecto. Se recomienda un máximo de 10."
             },
             "days_back": {
                 "type": "integer",
-                "description": "El número de días hacia atrás desde hoy para buscar dichos lanzamientos (por ejemplo, 7, 30). Se recomienda un máximo de 30 días"
+                "description": "El número de días hacia atrás desde hoy para buscar dichos lanzamientos. Si el usuario no especifica los días, usa 3 por defecto. Se recomienda un máximo de 30 días."
             }
         },
         "required": ["n_releases", "days_back"],
