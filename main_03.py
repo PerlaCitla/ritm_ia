@@ -27,7 +27,7 @@ model_openai = "gpt-5.4-mini"
 
 #set_bg_hack("#aba5ff")
 #set_animated_background()
-set_bg_gif(gif_files[0]) #if gif_files else None
+#set_bg_gif(gif_files[0]) #if gif_files else None
 
 st.title("🎶 Ritm-IA ✨")
 st.caption("📈 Tendencias musicales con IA 🤖")
