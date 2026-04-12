@@ -82,12 +82,22 @@ model_openai = "gpt-5.4-mini"
 #set_animated_background()
 #set_bg_gif(gif_files[0]) #if gif_files else None
 
-st.title("🎶 Ritm-IA ✨")
-st.caption("📈 Tendencias musicales con IA 🤖")
+st.title("🎶 RitmIA ✨")
+st.caption("📈 Music Trend Intelligence 🤖")
 
 # ==================== INICIALIZACIÓN SESSION STATE ====================
 if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "assistant", "content": "¿En qué te puedo ayudar?"}]
+    st.session_state.messages = [{
+        "role": "assistant", 
+        "content": """¡Hola! ✨ Soy RitmIA 🎵, tu asistente IA especializado en tendencias musicales. Descubre el futuro de la industria con tres funciones clave:
+
+
+- 🎯 Analizar lanzamientos recientes y predecir éxito de canciones
+- 🎤 Explorar datos de artistas y su catálogo musical
+- 🔗 Comparar perfiles de clústeres musicales
+
+¿Por dónde quieres empezar?"""
+    }]
 
 for msg in st.session_state.messages:
     st.chat_message(msg["role"]).write(msg["content"])
