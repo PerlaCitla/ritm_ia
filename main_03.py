@@ -1,7 +1,5 @@
 import os
 import glob
-import time
-import threading
 from dotenv import load_dotenv
 import streamlit as st
 from openai import OpenAI
@@ -44,106 +42,8 @@ client_openai = OpenAI(api_key=OPENAI_API_KEY)
 
 from my_functions.tooling import handle_tool_calls, tools
 from my_functions.config_st import set_bg_hack,set_animated_background,set_bg_gif
+from my_functions.utils import run_with_fun_facts, stream_assistant_answer
 
-# ==================== FUNCIONES AUXILIARES ====================
-def stream_assistant_answer(client, model, conversation):
-    """
-    Llama al modelo con stream=True y pinta la respuesta progresivamente.
-    Devuelve el texto completo generado.
-    """
-    full_response = ""
-    placeholder = st.empty()
-
-    stream = client.chat.completions.create(
-        model=model,
-        messages=conversation,
-        stream=True,
-    )
-
-    for chunk in stream:
-        delta = chunk.choices[0].delta
-        if delta and delta.content:
-            full_response += delta.content
-            placeholder.markdown(full_response)
-
-    return full_response
-
-
-MUSIC_FUN_FACTS = [
-    "El tema mas reproducido de la historia en plataformas de streaming es 'Blinding Lights' de The Weeknd.",
-    "Spotify reporta mas de 100,000 canciones nuevas subidas cada dia por artistas de todo el mundo.",
-    "El reggaeton y el regional mexicano han tenido uno de los mayores crecimientos globales en escucha reciente.",
-    "Escuchar musica puede mejorar el estado de animo en pocos minutos, especialmente con canciones conocidas.",
-    "Las playlists editoriales pueden acelerar el descubrimiento de un artista emergente en cuestion de horas.",
-    "La colaboracion entre artistas de distintos paises suele aumentar el alcance internacional de una cancion.",
-    "El vinilo ha vuelto a crecer en ventas en varios mercados, incluso en la era del streaming.",
-    "La cancion 'Asereje' de Las Ketchup fue un fenomeno global en la decada de los 2000.",
-    "Mozart compuso mas de 600 obras antes de morir a los 35 anos.",
-    "El primer videoclip emitido en MTV fue 'Video Killed the Radio Star' de The Buggles.",
-    "El tempo promedio de muchos hits pop suele estar entre 90 y 120 BPM.",
-    "Muchas canciones exitosas usan progresiones armonicas simples para ser mas memorables.",
-    "El algoritmo de recomendacion aprende de saltos, repeticiones y tiempo de escucha de cada usuario.",
-    "La musica en vivo suele incrementar de forma notable las reproducciones en streaming de un artista.",
-    "El K-pop se ha consolidado como una fuerza global gracias a fandoms digitales muy organizados.",
-    "Bandas sonoras de peliculas y videojuegos impulsan el descubrimiento de artistas en nuevas audiencias.",
-]
-
-
-def run_with_fun_facts(
-    task_fn,
-    placeholder,
-    context_msg,
-    threshold_seconds=5,
-    min_visible_seconds=7.5,
-):
-    """
-    Ejecuta una tarea bloqueante en segundo plano y, si supera `threshold_seconds`,
-    muestra datos curiosos rotativos para reducir la sensacion de espera.
-    """
-    state = {"result": None, "error": None, "done": False}
-
-    def _runner():
-        try:
-            state["result"] = task_fn()
-        except Exception as err:
-            state["error"] = err
-        finally:
-            state["done"] = True
-
-    worker = threading.Thread(target=_runner, daemon=True)
-    worker.start()
-
-    fact_idx = 0
-    shown = False
-    first_shown_at = None
-    last_switch = -999.0
-    start = time.time()
-
-    while not state["done"]:
-        elapsed = time.time() - start
-        if elapsed >= threshold_seconds and (elapsed - last_switch) >= 4:
-            fact = MUSIC_FUN_FACTS[fact_idx % len(MUSIC_FUN_FACTS)]
-            placeholder.info(
-                f"⏳ {context_msg}\n\n"
-                f"🎵 **Dato curioso:** {fact}"
-            )
-            shown = True
-            if first_shown_at is None:
-                first_shown_at = time.time()
-            fact_idx += 1
-            last_switch = elapsed
-        time.sleep(0.25)
-
-    if shown:
-        visible_for = time.time() - first_shown_at if first_shown_at is not None else 0
-        if visible_for < min_visible_seconds:
-            time.sleep(min_visible_seconds - visible_for)
-        placeholder.empty()
-
-    if state["error"] is not None:
-        raise state["error"]
-
-    return state["result"]
 
 # ==================== CONFIGURACIÓN ====================
 

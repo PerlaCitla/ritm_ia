@@ -1,6 +1,11 @@
 import json
 
-from my_functions.utils import (get_all_insights_fresh,get_insights_artist,get_cluster_insights)
+from my_functions.utils import (
+    get_all_insights_fresh,
+    get_insights_artist,
+    get_cluster_insights,
+    get_recent_comparisons,
+)
 
 get_all_insights_fresh_json = {
     "name": "get_all_insights_fresh",
@@ -53,11 +58,29 @@ get_cluster_insights_json = {
         "additionalProperties": False
     }
 }
+# 3. Definir la Tool JSON
+get_recent_comparisons_json = {
+    "name": "get_recent_comparisons",
+    "description": "Usa esta herramienta (tool) para obtener una comparativa de los lanzamientos recientes contra los artistas top (éxito y no éxito) del dataset de entrenamiento. Ideal para el CASO D.",
+    "parameters": {
+        "type": "object",
+         "properties": {
+            "artist_name": {
+                "type": "string",
+                "description": "El nombre del artista musical que se va a comparar."
+            }
+        },
+        "required": ["artist_name"],
+        "additionalProperties": False
+    }
+}
+
 
 tools = [
     {"type": "function", "function": get_all_insights_fresh_json},
     {"type": "function", "function": get_insights_artist_json},
-    {"type": "function", "function": get_cluster_insights_json}
+    {"type": "function", "function": get_cluster_insights_json},
+    {"type": "function", "function": get_recent_comparisons_json}
 ]
 
 def handle_tool_calls(tool_calls):

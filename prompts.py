@@ -102,6 +102,13 @@ response_template = r"""
 **3) 🎸 Hipótesis Musical:** ¿Qué tipo de música o artistas suelen caer en esta categoría? (Ej. nichos de culto, hits virales).
 **4) 💡 Insight Estratégico:** ¿Por qué es importante este clúster para la industria o para el oyente?
 **5) 💬 Pregunta abierta.**
+
+**CASO D: Comparativa de Similitud (Nuevos vs Catálogo Histórico)**
+**1) 🎯 Lanzamiento:** Nombre del artista y título de la canción.
+**2) 🟢 Referentes de Éxito:** Nombra a los artistas/canciones exitosas más similares, su % de similitud y clúster. ¿Qué comparten en común?
+**3) 🔴 Referentes de No Éxito:** Nombra a los casos no exitosos más similares. ¿Qué factor podría inclinar la balanza hacia el éxito o fracaso?
+**4) 💡 Insight Analítico:** Según el modelo y las similitudes, ¿cuál es el pronóstico y recomendación para este artista?
+
 """
 
 # ============================================
@@ -124,7 +131,7 @@ Guíalo así:
 - 🔮 Predicción de éxito en nuevos lanzamientos. Ej: Dame los últimos 3 lanzamientos de los 4 días pasados
 - 🔍 Explorar un artista
 - 🧩 Perfilamiento de Clusters
-
+- 📊 Comparativa de similitud
 """
 
 # ============================================

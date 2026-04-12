@@ -4,12 +4,16 @@ import joblib
 import pandas as pd
 import numpy as np
 import requests
+import time
+import threading
 from openai import OpenAI
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import date, timedelta
 from gensim.models import Word2Vec
 from sklearn.preprocessing import StandardScaler
+from gensim.models import Word2Vec
+from sklearn.metrics.pairwise import cosine_similarity
 
 import urllib.request
 import streamlit as st
@@ -19,6 +23,8 @@ from dotenv import load_dotenv
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 base_path_inputs = os.path.join(os.path.dirname(__file__), "..", "inputs")
+
+save_path_outputs = os.path.join(os.path.dirname(__file__), "..", "outputs")
 
 
 from prompts import stronger_prompt
@@ -409,11 +415,17 @@ def generate_insights_list(client, df_predictions: pd.DataFrame) -> list:
     return all_insights
 
 def get_all_insights_fresh(n_releases: int, days_back: int):
-  os.environ['OPENAI_API_KEY']=OPENAI_API_KEY
+  os.environ['OPENAI_API_KEY'] = OPENAI_API_KEY
   client = OpenAI(api_key=OPENAI_API_KEY)
 
   df_master_recent_clean = get_recent_releases_data(n_releases=n_releases, days_back=days_back)
   df_predictions = predict_recent_releases(df_master_recent_clean)
+  
+  # GUARDAR LAS PREDICCIONES RECIENTES
+  save_path = os.path.join(save_path_outputs, "latest_predictions.csv")
+  df_predictions.to_csv(save_path, index=False)
+  print(f"Predicciones guardadas en {save_path} para su uso posterior.")
+
   all_insights = generate_insights_list(client=client, df_predictions=df_predictions)
   return all_insights
 
@@ -628,3 +640,249 @@ def get_cluster_insights(cluster_id: str):
         return {"cluster": cluster_id, "perfil": clusters_info[key]}
     else:
         return {"clusters": clusters_info}
+
+
+
+base_path_inputs = os.path.join(os.path.dirname(__file__), "..", "inputs")
+def get_comparisons_for_recent_releases(df_predictions, base_path_inputs=base_path_inputs, save_path_outputs=save_path_outputs):
+    """
+    Toma el DataFrame de lanzamientos recientes (ya con predicciones)
+    y busca los ejemplos más similares en el dataset de entrenamiento
+    (tanto casos de éxito como de no éxito) basándose en los embeddings,
+    filtrando por el clúster asignado al lanzamiento reciente.
+    """
+    print("1. Cargando datos de entrenamiento...")
+    train_embeddings = pd.read_csv(os.path.join(base_path_inputs, "train_embeddings.csv")).values
+    df_train = pd.read_csv(os.path.join(base_path_inputs, "df_music_master_train.csv"))
+    
+    print("2. Cargando modelos de NLP y Scaler...")
+    model_w2v = Word2Vec.load(os.path.join(base_path_inputs, 'word2vec_model.bin'))
+    scaler = joblib.load(os.path.join(base_path_inputs, 'scaler_embeddings.joblib'))
+    
+    print("3. Preprocesando texto de los nuevos lanzamientos...")
+    df_prep = rename_columns_by_type(df_predictions.copy())
+    imputation_file = os.path.join(base_path_inputs, 'imputation_values.joblib')
+    df_imp = impute_missing_values(df_prep, load_path=imputation_file)
+    df_imp = feature_engineering(df_imp)
+    
+    # Asegurar el mismo formato de columnas que en el entrenamiento
+    columnas_finales = pd.read_csv(os.path.join(base_path_inputs, "df_music_master_model.csv")).columns.tolist()
+    if "target_success_30d" in columnas_finales:
+        columnas_finales.remove("target_success_30d")
+        
+    for col in columnas_finales:
+        if col not in df_imp.columns:
+            df_imp[col] = np.nan
+            
+    df_imp = df_imp[columnas_finales]
+    df_text = concatenate_features(df_imp)
+    
+    print("4. Generando embeddings para los recientes...")
+    recent_embeddings, _ = create_embeddings_with_word2vec(
+        df=df_text,
+        text_column='concatenated_features',
+        existing_model=model_w2v
+    )
+    recent_embeddings_scaled = scaler.transform(recent_embeddings)
+    
+    print("5. Calculando similitudes y buscando referencias...")
+    # Calcular similitud coseno entre los nuevos lanzamientos y el dataset de train
+    similarities = cosine_similarity(recent_embeddings_scaled, train_embeddings)
+    
+    comparisons = []
+    for pos, (_, row) in enumerate(df_predictions.iterrows()):
+        sim_scores = similarities[pos]
+        recent_cluster = row.get('predicted_cluster', -1)
+        
+        # Índices ordenados de mayor a menor similitud
+        sorted_indices = np.argsort(sim_scores)[::-1]
+        
+        exitos = []
+        no_exitos = []
+        
+        for idx in sorted_indices:
+            # Detenerse cuando ya tenemos el top 3 de cada uno
+            if len(exitos) >= 3 and len(no_exitos) >= 3:
+                break
+                
+            train_row = df_train.iloc[idx]
+            
+            # Filtrar por el clúster al que pertenece el lanzamiento reciente
+            if train_row.get('cluster', -1) != recent_cluster:
+                continue
+                
+            comp_data = {
+                "artista": train_row.get('t_artist_name', 'Desconocido'),
+                "titulo": train_row.get('t_title', 'Desconocido'),
+                "cluster": train_row.get('cluster', -1),
+                "similitud": round(sim_scores[idx], 4)
+            }
+            
+            # Separar por clase real en entrenamiento
+            target = train_row.get('target_success_30d', 0)
+            if target == 1 and len(exitos) < 3:
+                exitos.append(comp_data)
+            elif target == 0 and len(no_exitos) < 3:
+                no_exitos.append(comp_data)
+                
+        comparisons.append({
+            "top_exitos_similares": exitos,
+            "top_no_exitos_similares": no_exitos
+        })
+        
+    df_predictions['referencias_comparativas'] = comparisons
+    print("\n¡Comparativas agregadas con éxito!")
+    
+    return df_predictions
+
+# Ejemplo de uso:
+# df_predictions_with_comp = get_comparisons_for_recent_releases(df_predictions)
+# display(df_predictions_with_comp[['title', 'artist_name', 'predicted_success_30d', 'referencias_comparativas']].head())
+
+# 2. Crear la nueva función para el Caso D
+def get_recent_comparisons(artist_name: str):
+    path =  os.path.join(save_path_outputs, "latest_predictions.csv")
+    if not os.path.exists(path):
+        return {"error": "No hay predicciones recientes guardadas. Pídele al usuario que primero analice los últimos lanzamientos."}
+    
+    print("Cargando predicciones guardadas...")
+    df_predictions = pd.read_csv(path)
+
+    if "artist_name" not in df_predictions.columns:
+        return {"error": "No se encontró la columna 'artist_name' en latest_predictions.csv."}
+
+    artist_name_clean = str(artist_name).strip().lower()
+    if not artist_name_clean:
+        return {"error": "El nombre del artista está vacío."}
+
+    df_artist = df_predictions[
+        df_predictions["artist_name"].fillna("").astype(str).str.strip().str.lower() == artist_name_clean
+    ].copy()
+
+    if df_artist.empty:
+        artistas_disponibles = (
+            df_predictions["artist_name"]
+            .dropna()
+            .astype(str)
+            .str.strip()
+            .unique()
+            .tolist()[:10]
+        )
+        return {
+            "error": f"No se encontró el artista '{artist_name}' en las predicciones recientes.",
+            "artistas_disponibles": artistas_disponibles
+        }
+
+    df_comp = get_comparisons_for_recent_releases(df_artist)
+    
+    # Formatear salida para el LLM
+    results = []
+    for _, row in df_comp.iterrows():
+        results.append({
+            "artista": row.get("artist_name", "Desconocido"),
+            "titulo": row.get("title", "Desconocido"),
+            "predicted_success": int(row.get("predicted_success_30d", 0)),
+            "comparativas": row.get("referencias_comparativas", {})
+        })
+    return results
+
+
+# ==================== FUNCIONES AUXILIARES ====================
+def stream_assistant_answer(client, model, conversation):
+    """
+    Llama al modelo con stream=True y pinta la respuesta progresivamente.
+    Devuelve el texto completo generado.
+    """
+    full_response = ""
+    placeholder = st.empty()
+
+    stream = client.chat.completions.create(
+        model=model,
+        messages=conversation,
+        stream=True,
+    )
+
+    for chunk in stream:
+        delta = chunk.choices[0].delta
+        if delta and delta.content:
+            full_response += delta.content
+            placeholder.markdown(full_response)
+
+    return full_response
+
+
+MUSIC_FUN_FACTS = [
+    "El tema mas reproducido de la historia en plataformas de streaming es 'Blinding Lights' de The Weeknd.",
+    "Spotify reporta mas de 100,000 canciones nuevas subidas cada dia por artistas de todo el mundo.",
+    "El reggaeton y el regional mexicano han tenido uno de los mayores crecimientos globales en escucha reciente.",
+    "Escuchar musica puede mejorar el estado de animo en pocos minutos, especialmente con canciones conocidas.",
+    "Las playlists editoriales pueden acelerar el descubrimiento de un artista emergente en cuestion de horas.",
+    "La colaboracion entre artistas de distintos paises suele aumentar el alcance internacional de una cancion.",
+    "El vinilo ha vuelto a crecer en ventas en varios mercados, incluso en la era del streaming.",
+    "La cancion 'Asereje' de Las Ketchup fue un fenomeno global en la decada de los 2000.",
+    "Mozart compuso mas de 600 obras antes de morir a los 35 anos.",
+    "El primer videoclip emitido en MTV fue 'Video Killed the Radio Star' de The Buggles.",
+    "El tempo promedio de muchos hits pop suele estar entre 90 y 120 BPM.",
+    "Muchas canciones exitosas usan progresiones armonicas simples para ser mas memorables.",
+    "El algoritmo de recomendacion aprende de saltos, repeticiones y tiempo de escucha de cada usuario.",
+    "La musica en vivo suele incrementar de forma notable las reproducciones en streaming de un artista.",
+    "El K-pop se ha consolidado como una fuerza global gracias a fandoms digitales muy organizados.",
+    "Bandas sonoras de peliculas y videojuegos impulsan el descubrimiento de artistas en nuevas audiencias.",
+]
+
+
+def run_with_fun_facts(
+    task_fn,
+    placeholder,
+    context_msg,
+    threshold_seconds=5,
+    min_visible_seconds=8.5,
+):
+    """
+    Ejecuta una tarea bloqueante en segundo plano y, si supera `threshold_seconds`,
+    muestra datos curiosos rotativos para reducir la sensacion de espera.
+    """
+    state = {"result": None, "error": None, "done": False}
+
+    def _runner():
+        try:
+            state["result"] = task_fn()
+        except Exception as err:
+            state["error"] = err
+        finally:
+            state["done"] = True
+
+    worker = threading.Thread(target=_runner, daemon=True)
+    worker.start()
+
+    fact_idx = 0
+    shown = False
+    first_shown_at = None
+    last_switch = -999.0
+    start = time.time()
+
+    while not state["done"]:
+        elapsed = time.time() - start
+        if elapsed >= threshold_seconds and (elapsed - last_switch) >= 4:
+            fact = MUSIC_FUN_FACTS[fact_idx % len(MUSIC_FUN_FACTS)]
+            placeholder.info(
+                f"⏳ {context_msg}\n\n"
+                f"🎵 **Dato curioso:** {fact}"
+            )
+            shown = True
+            if first_shown_at is None:
+                first_shown_at = time.time()
+            fact_idx += 1
+            last_switch = elapsed
+        time.sleep(0.25)
+
+    if shown:
+        visible_for = time.time() - first_shown_at if first_shown_at is not None else 0
+        if visible_for < min_visible_seconds:
+            time.sleep(min_visible_seconds - visible_for)
+        placeholder.empty()
+
+    if state["error"] is not None:
+        raise state["error"]
+
+    return state["result"]
