@@ -5,15 +5,56 @@ import streamlit as st
 from openai import OpenAI
 from prompts import stronger_prompt
 
+# Configuración de página (debe ser lo primero después de imports)
+st.set_page_config(
+    page_title="Ritm-IA",
+    page_icon="🎶",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Cargar variables de entorno localmente
 load_dotenv(override=True)
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+# Prioridad: secrets de Streamlit Cloud > variables de entorno locales
+try:
+    OPENAI_API_KEY = st.secrets["openai_api_key"]
+except (KeyError, FileNotFoundError):
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+if not OPENAI_API_KEY:
+    st.error("⚠️ Error: OPENAI_API_KEY no está configurada. Verifica tu archivo .env o los secrets en Streamlit Cloud.")
+    st.stop()
 
 client_openai = OpenAI(api_key=OPENAI_API_KEY)
 
 from my_functions.tooling import handle_tool_calls, tools
 from my_functions.config_st import set_bg_hack,set_animated_background,set_bg_gif
 
+# ==================== FUNCIONES AUXILIARES ====================
+def stream_assistant_answer(client, model, conversation):
+    """
+    Llama al modelo con stream=True y pinta la respuesta progresivamente.
+    Devuelve el texto completo generado.
+    """
+    full_response = ""
+    placeholder = st.empty()
+
+    stream = client.chat.completions.create(
+        model=model,
+        messages=conversation,
+        stream=True,
+    )
+
+    for chunk in stream:
+        delta = chunk.choices[0].delta
+        if delta and delta.content:
+            full_response += delta.content
+            placeholder.markdown(full_response)
+
+    return full_response
+
+# ==================== CONFIGURACIÓN ====================
 
 # Definir la ruta a la carpeta 'inputs' (sin ".." porque inputs está en el mismo nivel que main_03.py)
 path_background = os.path.join(os.path.dirname(__file__), "inputs")
@@ -32,6 +73,7 @@ model_openai = "gpt-5.4-mini"
 st.title("🎶 Ritm-IA ✨")
 st.caption("📈 Tendencias musicales con IA 🤖")
 
+# ==================== INICIALIZACIÓN SESSION STATE ====================
 if "messages" not in st.session_state:
     st.session_state.messages = [{"role": "assistant", "content": "¿En qué te puedo ayudar?"}]
 
@@ -46,7 +88,6 @@ if prompt:= st.chat_input("Escribe tu mensaje aquí..."):
 
     with st.chat_message("assistant", avatar="🎵"):
         done = False
-        response_content = None
         
         while not done:
             response = client_openai.chat.completions.create(
@@ -54,18 +95,44 @@ if prompt:= st.chat_input("Escribe tu mensaje aquí..."):
                 messages=conversation, 
                 tools=tools
             )
-            finish_reason = response.choices[0].finish_reason
+            choice = response.choices[0]
+            message = choice.message
+            finish_reason = choice.finish_reason
 
-            if finish_reason == "tool_calls":
-                message = response.choices[0].message
+            if finish_reason == "tool_calls" and message.tool_calls:
                 tool_calls = message.tool_calls
+                # Serializar tool_calls para compatibilidad
+                tool_calls_serialized = [
+                    {
+                        "id": tc.id,
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        },
+                        "type": tc.type,
+                    }
+                    for tc in tool_calls
+                ]
                 results = handle_tool_calls(tool_calls)
-                conversation.append(message)
+                safe_content = message.content or ""
+                if safe_content:
+                    st.session_state.messages.append({"role": message.role, "content": safe_content})
+                conversation.append(
+                    {
+                        "role": message.role,
+                        "content": safe_content,
+                        "tool_calls": tool_calls_serialized,
+                    }
+                )
                 conversation.extend(results)
             else:
                 done = True
-                response_content = response.choices[0].message.content
         
-        st.write(response_content)
+        # Streaming de respuesta con visualización progresiva
+        response_final = stream_assistant_answer(
+            client=client_openai,
+            model=model_openai,
+            conversation=conversation,
+        )
 
-    st.session_state.messages.append({"role": "assistant", "content": response_content})
+    st.session_state.messages.append({"role": "assistant", "content": response_final})
