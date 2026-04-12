@@ -23,13 +23,13 @@ from keras.layers import Input, Dense, Dropout
 from keras.models import Sequential
 from keras.callbacks import ModelCheckpoint, EarlyStopping
 import plotly.io as pio
-
+from typing import Tuple
 
 
 def concatenate_features(df: pd.DataFrame, target_column: str = None) -> pd.DataFrame:
     """
     Concatena todas las columnas (excepto la columna objetivo si se especifica)
-    en una nueva columna llamada 'concatenated_features'.
+    en una nueva columna llamada '    '.
 
     Args:
         df (pd.DataFrame): DataFrame de entrada.
@@ -40,21 +40,15 @@ def concatenate_features(df: pd.DataFrame, target_column: str = None) -> pd.Data
         pd.DataFrame: DataFrame con la nueva columna 'concatenated_features'.
     """
     df_copy = df.copy()
-    features_to_concatenate = df_copy.columns.tolist()
+
+    features_to_concatenate = list(df_copy.columns)
 
     if target_column and target_column in features_to_concatenate:
         features_to_concatenate.remove(target_column)
 
-    # Convertir todas las columnas de características a string para la concatenación
-    df_copy['concatenated_features'] = df_copy[features_to_concatenate].astype(str).agg(' '.join, axis=1).str.lower()
+    # Reemplazar nulos y convertir a string, luego concatenar
+    df_copy['concatenated_features'] = df_copy[features_to_concatenate].fillna(0).astype(str).agg(' '.join, axis=1).str.lower()
     return df_copy
-
-# def _patch_textsize(self, text, font=None, *args, **kwargs):
-#     left, top, right, bottom = self.textbbox((0, 0), text, font=font, *args, **kwargs)
-#     return right - left, bottom - top
-
-# # Parcheamos la librería dinámicamente
-# ImageDraw.ImageDraw.textsize = _patch_textsize
 
 def get_wordcloud(text, icon="fas fa-music", background_color=None, output_dir="output/models", image_name="wordcloud.png"):
     # Crear el directorio si no existe
@@ -75,20 +69,18 @@ def clean_text(text, pattern="[^a-zA-Z0-9 ]"):
     cleaned_text = u' '.join(cleaned_text.lower().split())
     return cleaned_text
 
-
-def create_embeddings_with_word2vec(df: pd.DataFrame,
-                                    text_column: str,
-                                    vector_size: int = 100,
-                                    window: int = 5,
-                                    min_count: int = 1,
-                                    workers: int = 4,
-                                    save_model_path: str = None,
-                                    load_model_path: str = None) -> np.ndarray:
+def create_embeddings_with_word2vec(
+    df: pd.DataFrame,
+    text_column: str,
+    vector_size: int = 100,
+    window: int = 5,
+    min_count: int = 1,
+    workers: int = 4,
+    existing_model: Word2Vec = None # Nuevo parámetro
+) -> Tuple[np.ndarray, Word2Vec]: # Tipo de retorno modificado
     """
     Genera embeddings para una columna de texto utilizando Word2Vec.
-
-    Si se especifica `load_model_path`, carga un Word2Vec preentrenado y usa ese vocabulario.
-    Si se especifica `save_model_path`, guarda el modelo entrenado para usarlo después en test.
+    Puede entrenar un nuevo modelo o usar uno existente.
 
     Args:
         df (pd.DataFrame): DataFrame de entrada.
@@ -97,22 +89,26 @@ def create_embeddings_with_word2vec(df: pd.DataFrame,
         window (int, optional): Distancia máxima entre la palabra actual y la predicha. Por defecto es 5.
         min_count (int, optional): Ignora todas las palabras con frecuencia total inferior a este. Por defecto es 1.
         workers (int, optional): Número de hilos de trabajo para entrenar el modelo. Por defecto es 4.
-        save_model_path (str, optional): Ruta donde guardar el modelo Word2Vec entrenado.
-        load_model_path (str, optional): Ruta desde donde cargar un modelo Word2Vec existente.
+        existing_model (Word2Vec, optional): Un modelo Word2Vec ya entrenado. Si se proporciona,
+                                            no se entrena un nuevo modelo, se usa este para generar los embeddings.
 
     Returns:
-        np.ndarray: Un array NumPy con los embeddings para cada registro del DataFrame.
+        Tuple[np.ndarray, Word2Vec]: Un array NumPy con los embeddings para cada registro del DataFrame
+                                     y el modelo Word2Vec utilizado (ya sea el entrenado o el existente).
     """
     # 1. Tokenizar el texto
     tokenized_sentences = [word_tokenize(text) for text in df[text_column].astype(str)]
-    cleaned_tokenized_sentences = [s for s in tokenized_sentences if s]
 
-    if load_model_path:
-        word2vec_model = Word2Vec.load(load_model_path)
+    if existing_model:
+        word2vec_model = existing_model
+        print("Usando modelo Word2Vec existente para generar embeddings.")
     else:
+        # 2. Entrenar el modelo Word2Vec (solo si no se proporcionó uno existente)
+        # Asegúrate de que las sentencias tokenizadas no estén vacías
+        cleaned_tokenized_sentences = [s for s in tokenized_sentences if s]
         if not cleaned_tokenized_sentences:
-            print("Advertencia: No hay frases válidas para entrenar Word2Vec. Retornando un array vacío.")
-            return np.array([])
+            print("Advertencia: No hay frases válidas para entrenar Word2Vec. Retornando un array vacío y None para el modelo.")
+            return np.array([]), None
 
         word2vec_model = Word2Vec(
             sentences=cleaned_tokenized_sentences,
@@ -121,13 +117,9 @@ def create_embeddings_with_word2vec(df: pd.DataFrame,
             min_count=min_count,
             workers=workers
         )
+        print("Modelo Word2Vec entrenado con éxito.")
 
-        if save_model_path:
-            os.makedirs(os.path.dirname(save_model_path), exist_ok=True)
-            word2vec_model.save(save_model_path)
-            print(f"Word2Vec guardado en: {save_model_path}")
-
-    # 2. Función para obtener el vector de una frase (promedio de vectores de palabras)
+    # 3. Función para obtener el vector de una frase (promedio de vectores de palabras)
     def get_sentence_vector(sentence_tokens, model, vector_size):
         vectors = []
         for word in sentence_tokens:
@@ -136,15 +128,15 @@ def create_embeddings_with_word2vec(df: pd.DataFrame,
         if vectors:
             return np.mean(vectors, axis=0)
         else:
-            return np.zeros(vector_size)
+            return np.zeros(vector_size) # Retorna un vector de ceros si no hay palabras en el vocabulario
 
-    # 3. Generar embeddings para cada fila del DataFrame original
+    # 4. Generar embeddings para cada fila del DataFrame original
     embeddings = np.array([
         get_sentence_vector(word_tokenize(text), word2vec_model, vector_size)
         for text in df[text_column].astype(str)
     ])
 
-    return embeddings
+    return embeddings, word2vec_model
 
 def plot_pca_variance(embeddings, n_components=20, subcarpeta="outputs/dim_reduc"):
     pca = PCA(n_components=n_components)

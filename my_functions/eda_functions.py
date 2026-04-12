@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import joblib
 import os
 
 
@@ -71,6 +72,7 @@ def find_completely_null_columns(df: pd.DataFrame) -> list:
 
     return columns_with_all_nulls
 
+
 def rename_columns_by_type(df: pd.DataFrame) -> pd.DataFrame:
     """
     Renames columns in a DataFrame based on their inferred type and specific keywords.
@@ -134,7 +136,7 @@ def rename_columns_by_type(df: pd.DataFrame) -> pd.DataFrame:
                     new_col_name = f't_{col}'
 
         new_columns.append(new_col_name)
-
+        print("Debug: Columna original:", col, "-> Nueva columna:", new_col_name)   
     df_copy.columns = new_columns
     
     # # Print renaming summary for debugging
@@ -145,8 +147,7 @@ def rename_columns_by_type(df: pd.DataFrame) -> pd.DataFrame:
     #         print(f"  {old_col:40s} -> {new_col}")
     # print()
     
-    return df_copy
-
+    return df_copy    
 def identificar_outliers_iqr(df, columnas):
     """
     Identifica los índices de las filas que contienen outliers 
@@ -193,59 +194,80 @@ def get_columns_by_null_percentage(df: pd.DataFrame, min_pct: float = 0.0, max_p
     null_percentage = df.isnull().sum() / df.shape[0]
     return null_percentage[(null_percentage > min_pct) & (null_percentage < max_pct)].index.tolist()
 
-def impute_missing_values(df: pd.DataFrame, columns_to_impute: list[str] = None) -> pd.DataFrame:
+def impute_missing_values(df: pd.DataFrame, columns_to_impute: list[str] = None,
+                          save_path: str = None, load_path: str = None) -> pd.DataFrame:
     """
     Imputes missing values in a DataFrame based on column type prefixes and an optional list of columns.
-    If 'columns_to_impute' is not provided, all columns with missing values are considered.
+    Can save the computed imputation values to a file, or load them from a file to prevent data leakage.
+
     - 'c_': Numeric columns imputed with the mean.
     - 'v_': Categorical columns imputed with the mode.
     - 'd_': Datetime columns imputed with the mode.
     - 't_': Text columns imputed with 'missing'.
-    Columns that are entirely NaN/NaT will not be imputed, assuming they were handled previously.
 
     Args:
         df (pd.DataFrame): The input DataFrame with columns prefixed by type.
         columns_to_impute (Optional[List[str]]): A list of column names to specifically impute.
-                                                  If None, all columns with missing values are considered.
+        save_path (Optional[str]): Path to save the calculated imputation values (.joblib).
+        load_path (Optional[str]): Path to load pre-calculated imputation values (.joblib).
 
     Returns:
         pd.DataFrame: A new DataFrame with specified missing values imputed.
     """
     df_imputed = df.copy()
+    imputation_dict = {}
 
-    # Determine which columns to process
+    # If loading for inference, apply pre-calculated values directly
+    if load_path and os.path.exists(load_path):
+        print(f"Loading imputation values from {load_path}...")
+        imputation_dict = joblib.load(load_path)
+        for col, val in imputation_dict.items():
+            if col in df_imputed.columns:
+                df_imputed[col] = df_imputed[col].fillna(val)
+        return df_imputed
+
+    # Determine which columns to process for training/fitting
     if columns_to_impute is not None:
         cols_to_process = [col for col in columns_to_impute if col in df_imputed.columns]
         if len(cols_to_process) != len(columns_to_impute):
             missing_cols = set(columns_to_impute) - set(cols_to_process)
             print(f"Warning: The following columns specified in 'columns_to_impute' were not found in the DataFrame: {missing_cols}")
     else:
-        # Process all columns if no specific list is given
-        # Filter to only columns that actually have nulls, to optimize
         cols_to_process = [col for col in df_imputed.columns if df_imputed[col].isnull().any()]
 
     for col in cols_to_process:
-        # Skip imputation if the column is entirely null/NaT (should have been dropped, but for robustness)
         if df_imputed[col].isnull().all():
             print(f"Info: Column '{col}' is entirely null/NaT and will not be imputed.")
             continue
 
-        # Only proceed if there are partial NaNs (already checked `isnull().any()` for `cols_to_process`)
         if col.startswith('c_'):  # Numeric columns
             if pd.api.types.is_numeric_dtype(df_imputed[col]):
-                df_imputed[col] = df_imputed[col].fillna(df_imputed[col].mean())
+                val = df_imputed[col].mean()
+                imputation_dict[col] = val
+                df_imputed[col] = df_imputed[col].fillna(val)
             else:
                 print(f"Warning: Column {col} prefixed as numeric but not numeric dtype. Skipping mean imputation.")
         elif col.startswith('v_') or col.startswith('d_'):  # Categorical or Datetime columns
-            mode_val = df_imputed[col].mode()[0] if not df_imputed[col].mode().empty else None
-            if mode_val is not None:
-                df_imputed[col] = df_imputed[col].fillna(mode_val)
+            mode_series = df_imputed[col].mode()
+            if not mode_series.empty:
+                val = mode_series[0]
+                imputation_dict[col] = val
+                df_imputed[col] = df_imputed[col].fillna(val)
             else:
                 print(f"Warning: Column {col} has no mode to impute. Skipping mode imputation.")
         elif col.startswith('t_'):  # Text columns
-            df_imputed[col] = df_imputed[col].fillna('missing')
+            val = 'missing'
+            imputation_dict[col] = val
+            df_imputed[col] = df_imputed[col].fillna(val)
         else:
             print(f"Column {col} does not have a recognized type prefix (c_, v_, d_, t_). Skipping imputation for this column.")
+
+    # Save imputation values if requested
+    if save_path:
+        os.makedirs(os.path.dirname(save_path) or '.', exist_ok=True)
+        joblib.dump(imputation_dict, save_path)
+        print(f"Saved imputation values for {len(imputation_dict)} columns to {save_path}")
+
     return df_imputed
 
 def encontrar_correlaciones_perfectas(df):
