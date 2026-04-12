@@ -1,5 +1,7 @@
 import os
 import glob
+import time
+import threading
 from dotenv import load_dotenv
 import streamlit as st
 from openai import OpenAI
@@ -66,6 +68,83 @@ def stream_assistant_answer(client, model, conversation):
 
     return full_response
 
+
+MUSIC_FUN_FACTS = [
+    "El tema mas reproducido de la historia en plataformas de streaming es 'Blinding Lights' de The Weeknd.",
+    "Spotify reporta mas de 100,000 canciones nuevas subidas cada dia por artistas de todo el mundo.",
+    "El reggaeton y el regional mexicano han tenido uno de los mayores crecimientos globales en escucha reciente.",
+    "Escuchar musica puede mejorar el estado de animo en pocos minutos, especialmente con canciones conocidas.",
+    "Las playlists editoriales pueden acelerar el descubrimiento de un artista emergente en cuestion de horas.",
+    "La colaboracion entre artistas de distintos paises suele aumentar el alcance internacional de una cancion.",
+    "El vinilo ha vuelto a crecer en ventas en varios mercados, incluso en la era del streaming.",
+    "La cancion 'Asereje' de Las Ketchup fue un fenomeno global en la decada de los 2000.",
+    "Mozart compuso mas de 600 obras antes de morir a los 35 anos.",
+    "El primer videoclip emitido en MTV fue 'Video Killed the Radio Star' de The Buggles.",
+    "El tempo promedio de muchos hits pop suele estar entre 90 y 120 BPM.",
+    "Muchas canciones exitosas usan progresiones armonicas simples para ser mas memorables.",
+    "El algoritmo de recomendacion aprende de saltos, repeticiones y tiempo de escucha de cada usuario.",
+    "La musica en vivo suele incrementar de forma notable las reproducciones en streaming de un artista.",
+    "El K-pop se ha consolidado como una fuerza global gracias a fandoms digitales muy organizados.",
+    "Bandas sonoras de peliculas y videojuegos impulsan el descubrimiento de artistas en nuevas audiencias.",
+]
+
+
+def run_with_fun_facts(
+    task_fn,
+    placeholder,
+    context_msg,
+    threshold_seconds=5,
+    min_visible_seconds=7.5,
+):
+    """
+    Ejecuta una tarea bloqueante en segundo plano y, si supera `threshold_seconds`,
+    muestra datos curiosos rotativos para reducir la sensacion de espera.
+    """
+    state = {"result": None, "error": None, "done": False}
+
+    def _runner():
+        try:
+            state["result"] = task_fn()
+        except Exception as err:
+            state["error"] = err
+        finally:
+            state["done"] = True
+
+    worker = threading.Thread(target=_runner, daemon=True)
+    worker.start()
+
+    fact_idx = 0
+    shown = False
+    first_shown_at = None
+    last_switch = -999.0
+    start = time.time()
+
+    while not state["done"]:
+        elapsed = time.time() - start
+        if elapsed >= threshold_seconds and (elapsed - last_switch) >= 4:
+            fact = MUSIC_FUN_FACTS[fact_idx % len(MUSIC_FUN_FACTS)]
+            placeholder.info(
+                f"⏳ {context_msg}\n\n"
+                f"🎵 **Dato curioso:** {fact}"
+            )
+            shown = True
+            if first_shown_at is None:
+                first_shown_at = time.time()
+            fact_idx += 1
+            last_switch = elapsed
+        time.sleep(0.25)
+
+    if shown:
+        visible_for = time.time() - first_shown_at if first_shown_at is not None else 0
+        if visible_for < min_visible_seconds:
+            time.sleep(min_visible_seconds - visible_for)
+        placeholder.empty()
+
+    if state["error"] is not None:
+        raise state["error"]
+
+    return state["result"]
+
 # ==================== CONFIGURACIÓN ====================
 
 # Definir la ruta a la carpeta 'inputs' (sin ".." porque inputs está en el mismo nivel que main_03.py)
@@ -103,35 +182,34 @@ for msg in st.session_state.messages:
     st.chat_message(msg["role"]).write(msg["content"])
 
 # ==================== CAJA DE TEXTO PRINCIPAL ====================
-prompt = st.chat_input("Escribe tu mensaje aquí...")
+if "pending_prompt" not in st.session_state:
+    st.session_state.pending_prompt = None
+
+typed_prompt = st.chat_input("Escribe tu mensaje aquí...")
+prompt = typed_prompt or st.session_state.pending_prompt
 
 # ==================== PREGUNTAS SUGERIDAS ====================
-if "button_key_counter" not in st.session_state:
-    st.session_state.button_key_counter = 0
-
 st.divider()
 st.markdown("**💡 Sugerencias:**")
 
 suggested_questions = [
     "🎯 Analiza los últimos 10 lanzamientos musicales",
-    "🎤 Cuéntame sobre el catálogo de The Weeknd",
+    "🎤 Cuéntame sobre el catálogo de Zoé",
     "🔗 ¿Qué características definen el clúster 0?",
-    "📊 ¿Cuáles son las tendencias musicales de 2025?",
 ]
 
 cols = st.columns(2)
 for idx, question in enumerate(suggested_questions):
     col = cols[idx % 2]
-    button_key = f"suggested_{idx}_{st.session_state.button_key_counter}"
-    if col.button(question, use_container_width=True, key=button_key):
-        prompt = question.split(" ", 1)[1]  # Remover emoji
-        st.session_state.button_key_counter += 1
+    if col.button(question, use_container_width=True, key=f"suggested_{idx}"):
+        st.session_state.pending_prompt = question.split(" ", 1)[1]  # Remover emoji
         st.rerun()
 
 st.divider()
 
 # ==================== PROCESAR MENSAJE ====================
 if prompt:
+    st.session_state.pending_prompt = None
     st.session_state.messages.append({"role": "user", "content": prompt})
     st.chat_message("user", avatar="👤").write(prompt)
     conversation = [{"role": "system", "content": stronger_prompt}]
@@ -139,12 +217,17 @@ if prompt:
 
     with st.chat_message("assistant", avatar="🎵"):
         done = False
+        wait_placeholder = st.empty()
         
         while not done:
-            response = client_openai.chat.completions.create(
-                model=model_openai, 
-                messages=conversation, 
-                tools=tools
+            response = run_with_fun_facts(
+                task_fn=lambda: client_openai.chat.completions.create(
+                    model=model_openai,
+                    messages=conversation,
+                    tools=tools,
+                ),
+                placeholder=wait_placeholder,
+                context_msg="Procesando tu solicitud y consultando el modelo...",
             )
             choice = response.choices[0]
             message = choice.message
@@ -164,7 +247,11 @@ if prompt:
                     }
                     for tc in tool_calls
                 ]
-                results = handle_tool_calls(tool_calls)
+                results = run_with_fun_facts(
+                    task_fn=lambda: handle_tool_calls(tool_calls),
+                    placeholder=wait_placeholder,
+                    context_msg="Descargando y analizando datos musicales...",
+                )
                 safe_content = message.content or ""
                 if safe_content:
                     st.session_state.messages.append({"role": message.role, "content": safe_content})
@@ -178,6 +265,8 @@ if prompt:
                 conversation.extend(results)
             else:
                 done = True
+
+        wait_placeholder.empty()
         
         # Streaming de respuesta con visualización progresiva
         response_final = stream_assistant_answer(
@@ -187,3 +276,5 @@ if prompt:
         )
 
     st.session_state.messages.append({"role": "assistant", "content": response_final})
+    # Fuerza refresco de UI para que las sugerencias se mantengan visibles
+    st.rerun()
