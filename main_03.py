@@ -447,6 +447,8 @@ def build_followup_suggestions(tool_name, tool_args):
     tool_args = tool_args or {}
     artist_name = str(tool_args.get("artist_name", "")).strip()
     cluster_id = str(tool_args.get("cluster_id", "")).strip()
+    artist_ref = artist_name or "ese artista"
+    cluster_ref = cluster_id or "1"
 
     if tool_name == "get_all_insights_fresh":
         return [
@@ -455,20 +457,17 @@ def build_followup_suggestions(tool_name, tool_args):
             "Quiero más detalles del artista más prometedor de la lista.",
         ]
     if tool_name == "get_insights_artist":
-        artist_ref = artist_name or "ese artista"
         return [
             f"Dame una comparativa reciente de {artist_ref} contra el catalogo.",
             f"Explícame en qué consiste el cluster {cluster_ref} del artista.",
         ]
     if tool_name == "get_cluster_insights":
-        cluster_ref = cluster_id or "1"
         return [
             f"Dame ejemplos de artistas del clúster {cluster_ref}.",
             f"Compara el clúster {cluster_ref} vs clúster 1.",
             "Analiza los últimos 5 lanzamientos y asígnales clúster.",
         ]
     if tool_name == "get_recent_comparisons":
-        artist_ref = artist_name or "ese artista"
         return [
             f"Explícame por qué {artist_ref} se parece a casos de éxito.",
             f"Dame acciones concretas para mejorar el pronóstico de {artist_ref}.",
