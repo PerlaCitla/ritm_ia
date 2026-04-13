@@ -6,6 +6,7 @@ import json
 import base64
 from dotenv import load_dotenv
 import streamlit as st
+import streamlit.components.v1 as components
 from openai import OpenAI, APIConnectionError, APITimeoutError
 from prompts import stronger_prompt
 
@@ -53,16 +54,16 @@ from my_functions.config_st import set_bg_hack,set_animated_background,set_bg_gi
 
 
 
-# def add_animated_background():
+# def add_animated_background_with_video():
 #     # Estilos CSS para el fondo animado
 #     st.markdown(
 #         """
 #         <style>
 #             /* 1. Seleccionar el contenedor principal de Streamlit */
 #             .stApp {
-#                 background: linear-gradient(315deg, #F8FFF0 3%, #F0FFFF 38%, #F7F0FF 68%, #FFF0F1 100%);
+#                 background: linear-gradient(315deg, #F8FFF0 3%, #F0FFFF 38%, #F7F0FF 68%, #FFF0F1 98%);
 #                 background-size: 400% 400%; /* Agrandar el fondo para animarlo */
-#                 animation: gradient 30s ease infinite; /* Definir la animación */
+#                 animation: gradient 30s ease infinite; /* Redefinir la animación con más tiempo (30 segundos) */
 #                 background-attachment: fixed;
 #             }
 
@@ -72,7 +73,62 @@ from my_functions.config_st import set_bg_hack,set_animated_background,set_bg_gi
 #                 50% { background-position: 100% 100%; }
 #                 100% { background-position: 0% 0%; }
 #             }
-            
+
+#             /* 3. Video banner: estado inicial (centrado) */
+#             .fixed-top-video {
+#                 position: fixed;
+#                 top: 0.6rem;
+#                 left: 50%;
+#                 transform: translateX(-50%);
+#                 width: min(620px, calc(100vw - 2rem));
+#                 height: 132px;
+#                 z-index: 9998;
+#                 background: transparent;
+#                 border-radius: 14px;
+#                 display: flex;
+#                 align-items: center;
+#                 justify-content: center;
+#                 transition: all 320ms ease;
+#             }
+
+#             .fixed-top-video video {
+#                 width: 92%;
+#                 height: 110px;
+#                 object-fit: contain;
+#                 border-radius: 12px;
+#                 box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+#                 transition: all 320ms ease;
+#             }
+
+#             /* 3b. Al hacer scroll: encabezado izquierdo más pequeño */
+#             body.ritmia-scrolled .fixed-top-video,
+#             html.ritmia-scrolled .fixed-top-video,
+#             .stApp.ritmia-scrolled .fixed-top-video {
+#                 top: 0.45rem;
+#                 left: 0.9rem;
+#                 transform: none;
+#                 width: min(310px, calc(100vw - 1.8rem));
+#                 height: 74px;
+#                 background: #eceff1;
+#                 border-radius: 10px;
+#                 justify-content: flex-start;
+#                 padding-left: 0.55rem;
+#             }
+
+#             body.ritmia-scrolled .fixed-top-video video,
+#             html.ritmia-scrolled .fixed-top-video video,
+#             .stApp.ritmia-scrolled .fixed-top-video video {
+#                 width: 140px;
+#                 height: 56px;
+#                 border-radius: 8px;
+#                 box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+#             }
+
+#             /* 4. Empujar contenido para que no quede debajo del video fijo */
+#             .block-container {
+#                 padding-top: 10.2rem !important;
+#             }
+
 #             /* Opcional: Hacer el header transparente */
 #             [data-testid="stHeader"] {
 #                 background-color: rgba(0,0,0,0);
@@ -82,55 +138,135 @@ from my_functions.config_st import set_bg_hack,set_animated_background,set_bg_gi
 #         unsafe_allow_html=True
 #     )
 
+#     # Renderizar video desde ruta relativa (compatible local + Streamlit Cloud)
+#     video_path = os.path.join(os.path.dirname(__file__), "inputs", "video_ritmia.mp4")
+#     if os.path.exists(video_path):
+#         with open(video_path, "rb") as video_file:
+#             video_bytes = video_file.read()
+#         video_b64 = base64.b64encode(video_bytes).decode("utf-8")
+#         video_html = f"""
+#         <div class="fixed-top-video">
+#             <video autoplay loop muted playsinline preload="auto">
+#                 <source src="data:video/mp4;base64,{video_b64}" type="video/mp4">
+#             </video>
+#         </div>
+#         """
+#         st.markdown(video_html, unsafe_allow_html=True)
+#         components.html(
+#             """
+#             <script>
+#               (function () {
+#                 const getContexts = () => {
+#                   const contexts = [{ w: window, d: document }];
+#                   try {
+#                     if (window.parent && window.parent !== window && window.parent.document) {
+#                       contexts.push({ w: window.parent, d: window.parent.document });
+#                     }
+#                   } catch (_) {}
+#                   return contexts;
+#                 };
+
+#                 const getScrollTop = (ctx) => {
+#                   const d = ctx.d;
+#                   const w = ctx.w;
+#                   const appContainer = d.querySelector('[data-testid="stAppViewContainer"]');
+#                   const mainSection = d.querySelector('section.main');
+#                   const fromApp = appContainer ? appContainer.scrollTop : 0;
+#                   const fromMain = mainSection ? mainSection.scrollTop : 0;
+#                   const fromWindow = w.scrollY || d.documentElement.scrollTop || d.body.scrollTop || 0;
+#                   return Math.max(fromApp, fromMain, fromWindow);
+#                 };
+
+#                 const setCompactClass = (d, on) => {
+#                   if (d.body) d.body.classList.toggle("ritmia-scrolled", on);
+#                   if (d.documentElement) d.documentElement.classList.toggle("ritmia-scrolled", on);
+#                   const app = d.querySelector('.stApp');
+#                   if (app) app.classList.toggle("ritmia-scrolled", on);
+#                 };
+
+#                 const applyState = () => {
+#                   const contexts = getContexts();
+#                   const shouldCompact = contexts.some((ctx) => getScrollTop(ctx) > 90);
+#                   contexts.forEach((ctx) => setCompactClass(ctx.d, shouldCompact));
+#                 };
+
+#                 const bindOncePerContext = () => {
+#                   const contexts = getContexts();
+#                   contexts.forEach((ctx) => {
+#                     if (ctx.w.__ritmiaScrollHandlerBound) return;
+#                     ctx.w.addEventListener("scroll", applyState, { passive: true });
+#                     ctx.w.addEventListener("resize", applyState);
+#                     const appContainer = ctx.d.querySelector('[data-testid="stAppViewContainer"]');
+#                     const mainSection = ctx.d.querySelector('section.main');
+#                     if (appContainer) appContainer.addEventListener("scroll", applyState, { passive: true });
+#                     if (mainSection) mainSection.addEventListener("scroll", applyState, { passive: true });
+#                     ctx.w.__ritmiaScrollHandlerBound = true;
+#                   });
+#                 };
+
+#                 bindOncePerContext();
+#                 applyState();
+#               })();
+#             </script>
+#             """,
+#             height=0,
+#         )
+#     else:
+#         st.info("No se encontró el archivo `inputs/video_ritmia.mp4`.")
+
 # # Llamar a la función
-# add_animated_background()
+# add_animated_background_with_video()
+
 
 def add_animated_background_with_video():
-    # Estilos CSS para el fondo animado
+    # Estilos CSS para el fondo animado y video fijo
     st.markdown(
         """
         <style>
-            /* 1. Seleccionar el contenedor principal de Streamlit */
+            /* Fondo animado */
             .stApp {
                 background: linear-gradient(315deg, #F8FFF0 3%, #F0FFFF 38%, #F7F0FF 68%, #FFF0F1 98%);
-                background-size: 400% 400%; /* Agrandar el fondo para animarlo */
-                animation: gradient 30s ease infinite; /* Redefinir la animación con más tiempo (30 segundos) */
+                background-size: 400% 400%;
+                animation: gradient 30s ease infinite;
                 background-attachment: fixed;
             }
 
-            /* 2. Definir la animación del movimiento */
             @keyframes gradient {
                 0% { background-position: 0% 0%; }
                 50% { background-position: 100% 100%; }
                 100% { background-position: 0% 0%; }
             }
 
-            /* 3. Banner de video compacto */
+            /* Video siempre fijo en la parte izquierda */
             .fixed-top-video {
                 position: fixed;
                 top: 0.6rem;
-                left: 50%;
-                transform: translateX(-50%);
-                width: min(560px, calc(100vw - 2rem));
-                height: 180px;
+                left: 0.9rem;
+                width: min(310px, calc(100vw - 1.8rem));
+                height: 100px;
                 z-index: 9998;
-                pointer-events: none; /* evita click/focus en el video */
+                border-radius: 10px;
+                display: flex;
+                align-items: center;
+                justify-content: flex-start;
+                padding: 0; /* sin padding */
+                overflow: hidden; /* para que el video se ajuste al contenedor */
             }
 
             .fixed-top-video video {
-                width: 100%;
-                height: 100%;
-                object-fit: cover;
-                border-radius: 5px;
-                box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+                width: 80%;
+                height: 80%;
+                object-fit: cover; /* el video llena todo el cuadro */
+                border-radius: 10px;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
             }
 
-            /* 4. Empujar contenido para que no quede debajo del video fijo */
+            /* Empujar contenido para que no quede debajo del video fijo */
             .block-container {
-                padding-top: 9.5rem !important;
+                padding-top: 6rem !important;
             }
 
-            /* Opcional: Hacer el header transparente */
+            /* Header transparente */
             [data-testid="stHeader"] {
                 background-color: rgba(0,0,0,0);
             }
@@ -139,7 +275,7 @@ def add_animated_background_with_video():
         unsafe_allow_html=True
     )
 
-    # Renderizar video desde ruta relativa (compatible local + Streamlit Cloud)
+    # Renderizar video desde ruta relativa
     video_path = os.path.join(os.path.dirname(__file__), "inputs", "video_ritmia.mp4")
     if os.path.exists(video_path):
         with open(video_path, "rb") as video_file:
@@ -156,8 +292,34 @@ def add_animated_background_with_video():
     else:
         st.info("No se encontró el archivo `inputs/video_ritmia.mp4`.")
 
-# Llamar a la función
+
 add_animated_background_with_video()
+
+def add_footer():
+    st.markdown(
+        """
+        <style>
+        .footer {
+            position: fixed;
+            left: 0;
+            bottom: 0;
+            width: 100%;
+            background-color: white;
+            color: black;
+            text-align: center;
+            padding: 10px;
+            font-size: 14px;
+            z-index: 9999;
+        }
+        </style>
+        <div class="footer">
+            <p> RitmIA ✨ Music Trend Intelligence | © 2026</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+add_footer()
 
 
 # ==================== FUNCIONES AUXILIARES ====================
@@ -344,8 +506,8 @@ model_openai = "gpt-5.4-mini"
 #set_animated_background()
 #set_bg_gif(gif_files[0]) #if gif_files else None
 
-st.title("🎶 RitmIA ✨")
-st.caption("📈 Music Trend Intelligence 🤖")
+# st.title("🎶 RitmIA ✨")
+# st.caption("📈 Music Trend Intelligence 🤖")
 
 # ==================== INICIALIZACIÓN SESSION STATE ====================
 if "messages" not in st.session_state:
