@@ -71,11 +71,11 @@ response_template = r"""
 🧱 **Estructura de la respuesta (Elige el formato A, B o C según lo que pida el usuario)**
 
 **CASO A: Análisis de Nuevos Lanzamientos (Usa predicciones de ML)**
-**1) 📝 Resumen Ejecutivo (`executive_summary`)**
+**1) 📝 Resumen Ejecutivo**
 **2) 🤖 Predicciones del Modelo (ML Insights)**
-- 🔮 **Éxito a 30 días (`predicted_success_30d`):** Indica claramente si es "Éxito" (1) o "No Éxito" (0).
-- 📊 **Probabilidad de Éxito (`success_probability`):** Muestra el porcentaje de probabilidad.
-- 🧩 **Clúster asignado (`predicted_cluster`):** Indica el número de clúster y agrega su descripción basada en la información de contexto de clústeres provista abajo.
+- 🔮 **Éxito a 30 días:** Indica claramente si es "Éxito" (1) o "No Éxito" (0).
+- 📊 **Probabilidad de Éxito:** Muestra el porcentaje de probabilidad.
+- 🧩 **Clúster asignado:** Indica el número de clúster y agrega su descripción basada en la información de contexto de clústeres provista abajo.
 **3) 🎶 Qué lo hace interesante:** Describe el sonido e influencias.
 **4) 🔗 Enlaces para Escuchar:** Genera hipervínculos de búsqueda reemplazando los espacios por `+` o `%20`:
    - [▶️ Buscar en YouTube](https://www.youtube.com/results?search_query=ARTISTA+TITULO)
@@ -84,12 +84,12 @@ response_template = r"""
 **6) 💬 Pregunta abierta.**
 
 **CASO B: Análisis de Catálogo/Artista (No uses métricas de ML si no existen)**
-**1) 📝 Resumen Ejecutivo del Artista (`executive_summary`)**
-**2) 📈 Evaluación de Momentum (`momentum_evaluation`)**
-- Destaca sus fortalezas (`strengths`) y debilidades/áreas de oportunidad (`weaknesses`).
+**1) 📝 Resumen Ejecutivo del Artista**
+**2) 📈 Evaluación de Momentum**
+- Destaca sus fortalezas y debilidades/áreas de oportunidad.
 **3) 🎶 Estilo y Alcance Global**
-- Menciona sus géneros principales (`top_genres`), etiquetas (`key_tags`) y países de impacto (`global_reach`).
-**4) 📊 Destacados Numéricos (`numeric_highlights`)**
+- Menciona sus géneros principales, etiquetas y países de impacto.
+**4) 📊 Destacados Numéricos**
 **5) 🔗 Enlaces para Escuchar:** Genera hipervínculos de búsqueda:
    - [▶️ Buscar en YouTube](https://www.youtube.com/results?search_query=ARTISTA)
    - [🟢 Buscar en Spotify](https://open.spotify.com/search/ARTISTA)
@@ -115,7 +115,7 @@ response_template = r"""
 # Cluster Profiles Context
 # ============================================
 cluster_profiles_section = r"""
-📊 **Contexto de Clústeres (Usa esto para describir `predicted_cluster` en el CASO A o profundizar en el CASO C)**
+📊 **Contexto de Clústeres (Usa esto para describir el clúster asignado en el CASO A o profundizar en el CASO C)**
 - **Cluster 0: El "Mainstream Estándar".** Representa gran parte del catálogo con un rendimiento histórico muy sólido y el mayor promedio de oyentes.
 - **Cluster 1: "La Masa Promedio".** Posee métricas muy consistentes y buenas estimaciones de tracción a 30 días (Buen Engagement).
 - **Cluster 2: Los "Nicho Activo".** Subgéneros específicos con una base de fans leal y métricas robustas (Engagement Sólido).
