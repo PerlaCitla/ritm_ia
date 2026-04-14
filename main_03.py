@@ -478,11 +478,9 @@ def extract_suggested_questions_from_response(response_text):
         # Reemplaza placeholders de cluster por el cluster real detectado en la respuesta.
         cluster_value = _extract_cluster_from_text(full_text)
         if re.search(r"\[\s*cluster\s+[xy0-3]\s*\]", resolved, flags=re.IGNORECASE):
-            if not cluster_value:
-                return None
             resolved = re.sub(
                 r"\[\s*cluster\s+[xy0-3]\s*\]",
-                f"Cluster {cluster_value}",
+                f"Cluster {cluster_value}" if cluster_value else "Cluster",
                 resolved,
                 flags=re.IGNORECASE,
             )
@@ -490,9 +488,7 @@ def extract_suggested_questions_from_response(response_text):
         # Reemplaza placeholders de artista por un artista real encontrado en el texto.
         if re.search(r"\[\s*artista\s*\d+\s*\]", resolved, flags=re.IGNORECASE):
             artist_candidates = _extract_artist_candidates(full_text)
-            if not artist_candidates:
-                return None
-            chosen_artist = artist_candidates[0]
+            chosen_artist = artist_candidates[0] if artist_candidates else "este artista"
             resolved = re.sub(
                 r"\[\s*artista\s*\d+\s*\]",
                 chosen_artist,
@@ -500,8 +496,10 @@ def extract_suggested_questions_from_response(response_text):
                 flags=re.IGNORECASE,
             )
 
-        # Si queda cualquier placeholder entre corchetes, se omite para no romper flujo.
-        if re.search(r"\[[^\]]+\]", resolved):
+        # Limpia placeholders residuales para no romper el render de botones.
+        resolved = re.sub(r"\[\s*([^\]]+?)\s*\]", r"\1", resolved)
+        resolved = re.sub(r"\s+", " ", resolved).strip()
+        if not resolved:
             return None
 
         return resolved
