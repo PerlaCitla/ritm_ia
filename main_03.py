@@ -4,6 +4,7 @@ import time
 import threading
 import json
 import base64
+import re
 from dotenv import load_dotenv
 import streamlit as st
 import streamlit.components.v1 as components
@@ -442,51 +443,50 @@ def run_with_fun_facts(
     return state["result"]
 
 
-def build_followup_suggestions(tool_name, tool_args):
-    """Genera sugerencias de seguimiento según la tool usada."""
-    tool_args = tool_args or {}
-    artist_name = str(tool_args.get("artist_name", "")).strip()
-    cluster_id = str(tool_args.get("cluster_id", "")).strip()
-    artist_ref = artist_name or "ese artista"
-    cluster_ref = cluster_id or "1"
+def extract_suggested_questions_from_response(response_text):
+    """Extrae preguntas sugeridas ya escritas por el modelo para mostrarlas como botones."""
+    if not response_text:
+        return []
 
-    if tool_name == "get_all_insights_fresh":
-        return [
-            "Explícame el clúster 1 y cómo interpretarlo.",
-            "Dame una comparativa de similitud para uno de esos artistas.",
-            "Quiero más detalles del artista más prometedor de la lista.",
-        ]
-    if tool_name == "get_insights_artist":
-        return [
-            f"Dame una comparativa reciente de {artist_ref} contra el catalogo.",
-            f"Explícame en qué consiste el cluster {cluster_ref} del artista.",
-        ]
-    if tool_name == "get_cluster_insights":
-        return [
-            f"Dame ejemplos de artistas del clúster {cluster_ref}.",
-            f"Compara el clúster {cluster_ref} vs clúster 1.",
-            "Analiza los últimos 5 lanzamientos y asígnales clúster.",
-        ]
-    if tool_name == "get_recent_comparisons":
-        return [
-            f"Explícame por qué {artist_ref} se parece a casos de éxito.",
-            f"Dame acciones concretas para mejorar el pronóstico de {artist_ref}.",
-            f"Dame el detalle completo del catálogo de {artist_ref}.",
-        ]
-    return [
-        "Analiza los últimos 5 lanzamientos musicales.",
-        "Cuéntame sobre el catálogo de Zoé.",
-        "¿Qué características definen el clúster 1?",
-    ]
+    suggestions = []
+    seen = set()
+    valid_prefixes = (
+        "saber más acerca de",
+        "saber mas acerca de",
+        "que significa el",
+        "qué significa el",
+        "explorar a",
+        "comparar a este artista",
+        "comparar este artista",
+        "comparar",
+    )
 
+    lines = response_text.splitlines()
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
 
-def render_followup_text_block(suggestions):
-    if not suggestions:
-        return ""
-    lines = ["", "### Siguientes preguntas sugeridas"]
-    for question in suggestions:
-        lines.append(f"- {question}")
-    return "\n".join(lines)
+        # Solo considerar bullets/listas del texto generado.
+        if re.match(r"^[-*]\s+", line):
+            candidate = re.sub(r"^[-*]\s+", "", line).strip()
+        elif re.match(r"^\d+[.)]\s+", line):
+            candidate = re.sub(r"^\d+[.)]\s+", "", line).strip()
+        else:
+            continue
+
+        # Limpieza de comillas y markdown básico.
+        candidate = candidate.strip('"“”').replace("**", "").strip()
+        # Normalizar signos de apertura para detectar preguntas como "¿Qué significa el Cluster 1?".
+        normalized_candidate = candidate.lstrip("¿¡").strip()
+        lowered = normalized_candidate.lower()
+        if lowered.startswith(valid_prefixes) and candidate not in seen:
+            seen.add(candidate)
+            suggestions.append(candidate)
+        if len(suggestions) >= 3:
+            break
+
+    return suggestions
 
 
 # ==================== CONFIGURACIÓN ====================
@@ -512,15 +512,11 @@ model_openai = "gpt-5.4-mini"
 if "messages" not in st.session_state:
     st.session_state.messages = [{
         "role": "assistant", 
-        "content": """¡Hola! ✨ Soy RitmIA 🎵, tu asistente IA especializado en tendencias musicales. Descubre el futuro de la industria con tres funciones clave:
+        "content": """¡Hola! ✨ Soy RitmIA 🎵, tu asistente IA especializado en tendencias musicales. 
 
-
-- 🎯 Analizar lanzamientos recientes y predecir éxito de canciones
-- 🎤 Explorar datos de artistas y su catálogo musical
-- 🔗 Comparar perfiles de clústeres musicales
-
-¿Por dónde quieres empezar?"""
+Comencemos analizando **últimos lanzamientos** para descubrir las tendencias actuales del mercado 🎶"""
     }]
+    st.session_state.conversation_stage = "initial_launches"
 
 for msg in st.session_state.messages:
     st.chat_message(msg["role"]).write(msg["content"])
@@ -538,17 +534,16 @@ prompt = typed_prompt or st.session_state.pending_prompt
 is_fresh_chat = len(st.session_state.messages) <= 1
 if is_fresh_chat:
     st.divider()
-    st.markdown("**💡 Sugerencias:**")
+    st.markdown("**💡 Elige una opción:**")
 
     suggested_questions = [
-        "🎯 Analiza los últimos 5 lanzamientos musicales",
-        "🎤 Cuéntame sobre el catálogo de Zoé",
-        "🔗 ¿Qué es el clúster 1?",
+        "Dame los últimos 3 lanzamientos",
+        "Dame los últimos 5 lanzamientos de los pasados 3 días",
     ]
 
     for idx, question in enumerate(suggested_questions):
         if st.button(question, use_container_width=False, key=f"suggested_{idx}"):
-            st.session_state.pending_prompt = question.split(" ", 1)[1]  # Remover emoji
+            st.session_state.pending_prompt = question
             st.rerun()
 
 if st.session_state.dynamic_suggestions:
@@ -561,6 +556,27 @@ if st.session_state.dynamic_suggestions:
 
 # ==================== PROCESAR MENSAJE ====================
 if prompt:
+    # Validar si estamos en fase inicial y validar el contenido
+    is_initial_stage = st.session_state.conversation_stage == "initial_launches"
+    
+    if is_initial_stage:
+        # Keywords válidos para la fase inicial
+        valid_keywords = ["últimos", "lanzamientos", "recientes", "últimas"]
+        prompt_lower = prompt.lower()
+        is_valid = any(keyword in prompt_lower for keyword in valid_keywords)
+        
+        if not is_valid:
+            # Rechazar solicitud y mostrar sugerencias nuevamente
+            st.chat_message("user", avatar="👤").write(prompt)
+            with st.chat_message("assistant", avatar="🎵"):
+                st.warning("⚠️ Por favor, comencemos analizando los **últimos lanzamientos** musicales. Elige una de estas opciones:")
+                st.info("- Dame los últimos 3 lanzamientos\n- Dame los últimos 5 lanzamientos de los pasados 3 días")
+            st.session_state.pending_prompt = None
+            st.stop()
+        else:
+            # Cambiar a siguiente fase después de primera interacción válida
+            st.session_state.conversation_stage = "full_access"
+    
     st.session_state.pending_prompt = None
     st.session_state.messages.append({"role": "user", "content": prompt})
     st.chat_message("user", avatar="👤").write(prompt)
@@ -656,12 +672,9 @@ if prompt:
                     "⚠️ Hubo un corte de conexión mientras generaba la respuesta. "
                     "Intenta reenviar tu última pregunta."
                 )
-            followup_suggestions = build_followup_suggestions(last_tool_name, last_tool_args)
+            followup_suggestions = extract_suggested_questions_from_response(response_final)
             st.session_state.dynamic_suggestions = followup_suggestions
-            response_final = (
-                response_final.strip()
-                + render_followup_text_block(followup_suggestions)
-            )
+            response_final = response_final.strip()
 
     st.session_state.messages.append({"role": "assistant", "content": response_final})
     # Fuerza refresco de UI para que las sugerencias se mantengan visibles
