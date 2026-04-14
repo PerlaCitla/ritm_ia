@@ -449,6 +449,63 @@ def extract_suggested_questions_from_response(response_text):
     if not response_text:
         return []
 
+    def _extract_cluster_from_text(text):
+        matches = re.findall(r"cluster\s*([0-3])", text, flags=re.IGNORECASE)
+        return matches[-1] if matches else None
+
+    def _extract_artist_candidates(text):
+        candidates = []
+        seen_candidates = set()
+
+        # Prioriza nombres con formato destacado en markdown.
+        for name in re.findall(r"\*\*([^*]{2,80})\*\*", text):
+            clean = name.strip(" \"'“”‘’.,:;!?()[]{}")
+            if not clean:
+                continue
+            lowered = unicodedata.normalize("NFKD", clean.lower())
+            lowered = "".join(ch for ch in lowered if not unicodedata.combining(ch))
+            if any(block in lowered for block in ("cluster", "resumen", "insight", "prediccion", "exito", "probabilidad")):
+                continue
+            if lowered not in seen_candidates:
+                seen_candidates.add(lowered)
+                candidates.append(clean)
+
+        return candidates
+
+    def _resolve_placeholders(candidate, full_text):
+        resolved = candidate
+
+        # Reemplaza placeholders de cluster por el cluster real detectado en la respuesta.
+        cluster_value = _extract_cluster_from_text(full_text)
+        if re.search(r"\[\s*cluster\s+[xy0-3]\s*\]", resolved, flags=re.IGNORECASE):
+            if not cluster_value:
+                return None
+            resolved = re.sub(
+                r"\[\s*cluster\s+[xy0-3]\s*\]",
+                f"Cluster {cluster_value}",
+                resolved,
+                flags=re.IGNORECASE,
+            )
+
+        # Reemplaza placeholders de artista por un artista real encontrado en el texto.
+        if re.search(r"\[\s*artista\s*\d+\s*\]", resolved, flags=re.IGNORECASE):
+            artist_candidates = _extract_artist_candidates(full_text)
+            if not artist_candidates:
+                return None
+            chosen_artist = artist_candidates[0]
+            resolved = re.sub(
+                r"\[\s*artista\s*\d+\s*\]",
+                chosen_artist,
+                resolved,
+                flags=re.IGNORECASE,
+            )
+
+        # Si queda cualquier placeholder entre corchetes, se omite para no romper flujo.
+        if re.search(r"\[[^\]]+\]", resolved):
+            return None
+
+        return resolved
+
     suggestions = []
     seen = set()
     valid_prefixes = (
@@ -481,6 +538,9 @@ def extract_suggested_questions_from_response(response_text):
 
         # Limpieza de comillas y markdown básico.
         candidate = candidate.strip('"“”').replace("**", "").strip()
+        candidate = _resolve_placeholders(candidate, response_text)
+        if not candidate:
+            continue
         # Normalizar signos de apertura y acentos para detectar preguntas con tildes (ej: clústeres).
         normalized_candidate = candidate.lstrip("¿¡").strip()
         lowered = unicodedata.normalize("NFKD", normalized_candidate.lower())
