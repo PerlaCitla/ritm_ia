@@ -1,9 +1,12 @@
 import os
 import calendar
+import difflib
 import joblib
 import pandas as pd
 import numpy as np
+import re
 import requests
+import unicodedata
 from openai import OpenAI
 from pydantic import BaseModel, Field
 from typing import List, Optional
@@ -428,6 +431,58 @@ def get_all_insights_fresh(n_releases: int, days_back: int):
   return all_insights
 
 
+def _normalize_artist_name(name: str) -> str:
+    """Normaliza texto para comparar nombres de artista de forma robusta."""
+    if name is None:
+        return ""
+    text = str(name).strip().lower()
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = re.sub(r"[^a-z0-9\s]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _pick_best_artist_candidate(query_name: str, artist_candidates: pd.DataFrame):
+    """
+    Selecciona el mejor candidato de MusicBrainz usando similitud de string.
+    Evita elegir ciegamente el primer resultado cuando el nombre es ambiguo.
+    """
+    if artist_candidates.empty:
+        return None
+
+    q_norm = _normalize_artist_name(query_name)
+    if not q_norm:
+        return artist_candidates.iloc[0]
+
+    best_row = None
+    best_score = -1.0
+    query_tokens = set(q_norm.split())
+
+    for _, row in artist_candidates.iterrows():
+        candidate_name = str(row.get("name", ""))
+        c_norm = _normalize_artist_name(candidate_name)
+        if not c_norm:
+            continue
+
+        ratio = difflib.SequenceMatcher(None, q_norm, c_norm).ratio()
+        c_tokens = set(c_norm.split())
+        token_overlap = len(query_tokens & c_tokens) / max(1, len(query_tokens | c_tokens))
+        exact_bonus = 0.15 if q_norm == c_norm else 0.0
+        startswith_bonus = 0.08 if c_norm.startswith(q_norm) or q_norm.startswith(c_norm) else 0.0
+        score = ratio + token_overlap + exact_bonus + startswith_bonus
+
+        if score > best_score:
+            best_score = score
+            best_row = row
+
+    # Umbral mínimo para evitar mapeos muy lejanos (ej: Loretta's -> Loretta Lynn).
+    if best_row is None or best_score < 0.95:
+        return None
+
+    return best_row
+
+
 def get_artist_master_data(artist_name: str) -> pd.DataFrame:
     """
     Ejecuta el pipeline completo de extracción y enriquecimiento (MusicBrainz,
@@ -440,9 +495,18 @@ def get_artist_master_data(artist_name: str) -> pd.DataFrame:
         print("No se encontraron resultados para el artista.")
         return pd.DataFrame()
 
-    # 1. Tomar el ID del primer candidato
-    artist_id = artist_candidates.iloc[0]["artist_id"]
-    real_name = artist_candidates.iloc[0]["name"]
+    # 1. Elegir el mejor candidato por similitud de nombre
+    selected = _pick_best_artist_candidate(artist_name, artist_candidates)
+    if selected is None:
+        top_candidates = artist_candidates["name"].astype(str).tolist()
+        print(
+            "No se pudo desambiguar el artista con suficiente confianza. "
+            f"Candidatos sugeridos: {top_candidates}"
+        )
+        return pd.DataFrame()
+
+    artist_id = selected["artist_id"]
+    real_name = selected["name"]
     print(f"✅ Artista seleccionado: {real_name} ({artist_id})")
 
     # 2. Obtener los release groups del artista
@@ -599,14 +663,177 @@ def get_artist_catalog_insights(client, df_artist: pd.DataFrame, model_name: str
     insights = response.choices[0].message.parsed
     return insights.model_dump()
 
+def _get_artist_row_from_predictions(artist_name: str) -> tuple:
+    """
+    Busca la fila del artista en latest_predictions.csv con matching flexible.
+    Devuelve (df_row, predicted_cluster) o (None, None) si no se encuentra.
+    """
+    path = os.path.join(save_path_outputs, "latest_predictions.csv")
+    if not os.path.exists(path):
+        return None, None
+    try:
+        df_pred = pd.read_csv(path)
+    except Exception:
+        return None, None
+
+    if "artist_name" not in df_pred.columns:
+        return None, None
+
+    artist_norm = _normalize_artist_name(artist_name)
+    series = df_pred["artist_name"].fillna("").astype(str).str.strip()
+    norm_series = series.apply(_normalize_artist_name)
+
+    # Exacto
+    mask = norm_series == artist_norm
+    if not mask.any():
+        # Parcial
+        mask = norm_series.apply(lambda n: bool(n) and (artist_norm in n or n in artist_norm))
+    if not mask.any():
+        # Fuzzy
+        scored = [
+            (i, difflib.SequenceMatcher(None, artist_norm, n).ratio())
+            for i, n in enumerate(norm_series)
+            if n
+        ]
+        if scored:
+            best_idx, best_score = max(scored, key=lambda x: x[1])
+            if best_score >= 0.72:
+                mask = pd.Series([False] * len(df_pred))
+                mask.iloc[best_idx] = True
+                mask.index = df_pred.index
+
+    if not mask.any():
+        return None, None
+
+    row = df_pred[mask].iloc[[0]].copy()
+    cluster = row["predicted_cluster"].iloc[0] if "predicted_cluster" in row.columns else None
+    cluster = int(cluster) if pd.notna(cluster) else None
+    return row, cluster
+
+
+def _fallback_from_training(artist_name: str) -> dict:
+    """
+    Fallback cuando el artista no se encuentra en las APIs externas.
+    1. Obtiene la fila del artista en latest_predictions.csv.
+    2. Genera su embedding con el mismo pipeline del modelo.
+    3. Filtra train_embeddings por el clúster real del artista.
+    4. Devuelve el top 3 más similar por similitud coseno (sin separar por éxito).
+    """
+    artist_row, known_cluster = _get_artist_row_from_predictions(artist_name)
+
+    if artist_row is None or known_cluster is None:
+        return {}
+
+    # --- Generar embedding del artista con el mismo pipeline ---
+    try:
+        model_w2v = Word2Vec.load(os.path.join(base_path_inputs, 'word2vec_model.bin'))
+        scaler = joblib.load(os.path.join(base_path_inputs, 'scaler_embeddings.joblib'))
+
+        df_prep = rename_columns_by_type(artist_row.copy())
+        imputation_file = os.path.join(base_path_inputs, 'imputation_values.joblib')
+        df_imp = impute_missing_values(df_prep, load_path=imputation_file)
+        df_imp = feature_engineering(df_imp)
+        df_imp = create_auxiliar_target_variable(df_imp)
+
+        columnas_finales = pd.read_csv(
+            os.path.join(base_path_inputs, "df_music_master_model.csv")
+        ).columns.tolist()
+        if "target_success_30d" in columnas_finales:
+            columnas_finales.remove("target_success_30d")
+        for col in columnas_finales:
+            if col not in df_imp.columns:
+                df_imp[col] = np.nan
+        df_imp = df_imp[columnas_finales]
+
+        df_text = concatenate_features(df_imp)
+        artist_embedding, _ = create_embeddings_with_word2vec(
+            df=df_text,
+            text_column='concatenated_features',
+            existing_model=model_w2v
+        )
+        artist_embedding_scaled = scaler.transform(artist_embedding)
+    except Exception as e:
+        print(f"Error generando embedding para fallback: {e}")
+        return {}
+
+    # --- Cargar training set y filtrar por clúster ---
+    df_train = pd.read_csv(os.path.join(base_path_inputs, "df_music_master_train.csv"))
+    train_embeddings = pd.read_csv(os.path.join(base_path_inputs, "train_embeddings.csv")).values
+
+    cluster_mask = df_train["cluster"].apply(
+        lambda c: pd.notna(c) and int(c) == known_cluster
+    )
+    cluster_indices = df_train.index[cluster_mask].tolist()
+
+    if not cluster_indices:
+        return {}
+
+    train_emb_cluster = train_embeddings[cluster_indices]
+    similarities = cosine_similarity(artist_embedding_scaled, train_emb_cluster)[0]
+
+    # Top 3 más similares (excluir el propio artista si aparece)
+    top_indices = np.argsort(similarities)[::-1]
+    artist_norm = _normalize_artist_name(artist_name)
+
+    results = []
+    for idx in top_indices:
+        train_row = df_train.iloc[cluster_indices[idx]]
+        cand_name = str(train_row.get("t_artist_name", ""))
+        if _normalize_artist_name(cand_name) == artist_norm:
+            continue  # saltar si es el mismo artista
+        results.append({
+            "artista": cand_name,
+            "titulo": train_row.get("t_title", ""),
+            "tipo": train_row.get("t_primary_type", ""),
+            "cluster": known_cluster,
+            "similitud": round(float(similarities[idx]), 4),
+            "oyentes_lastfm": train_row.get("c_lastfm_listeners", None),
+            "estimacion_30d_oyentes": train_row.get("c_estimated_30d_listeners", None),
+            "exito_historico": int(train_row.get("target_success_30d", 0))
+                if pd.notna(train_row.get("target_success_30d")) else None,
+        })
+        if len(results) >= 3:
+            break
+
+    if not results:
+        return {}
+
+    cluster_label = clusters_info.get(f"cluster_{known_cluster}", {}).get("nombre", f"Cluster {known_cluster}")
+
+    return {
+        "fuente": "training_set_fallback",
+        "aviso": (
+            f"No se encontró información en las APIs externas para '{artist_name}'. "
+            f"El artista pertenece al clúster {known_cluster} ({cluster_label}). "
+            f"Aquí los lanzamientos más similares dentro de ese clúster en el catálogo histórico:"
+        ),
+        "artista_consultado": artist_name,
+        "cluster": known_cluster,
+        "cluster_nombre": cluster_label,
+        "similares_mismo_cluster": results,
+    }
+
+
 def get_insights_artist(artist_name: str):
-  df = get_artist_master_data(artist_name)
+    df = get_artist_master_data(artist_name)
 
-  os.environ['OPENAI_API_KEY']=OPENAI_API_KEY
-  client = OpenAI(api_key=OPENAI_API_KEY)
+    if df.empty:
+        fallback = _fallback_from_training(artist_name)
+        if fallback:
+            return fallback
+        return {
+            "error": (
+                f"No pude identificar con confianza al artista '{artist_name}' "
+                "ni en las APIs externas ni en el catálogo histórico. "
+                "Intenta con el nombre exacto."
+            )
+        }
 
-  response = get_artist_catalog_insights(client, df)
-  return response #regrea un json
+    os.environ['OPENAI_API_KEY'] = OPENAI_API_KEY
+    client = OpenAI(api_key=OPENAI_API_KEY)
+
+    response = get_artist_catalog_insights(client, df)
+    return response  # regresa un json
 
 
 clusters_info = {
@@ -749,13 +976,59 @@ def get_recent_comparisons(artist_name: str):
     if "artist_name" not in df_predictions.columns:
         return {"error": "No se encontró la columna 'artist_name' en latest_predictions.csv."}
 
-    artist_name_clean = str(artist_name).strip().lower()
-    if not artist_name_clean:
+    artist_name_clean = str(artist_name).strip()
+    artist_name_norm = _normalize_artist_name(artist_name_clean)
+    if not artist_name_norm:
         return {"error": "El nombre del artista está vacío."}
 
-    df_artist = df_predictions[
-        df_predictions["artist_name"].fillna("").astype(str).str.strip().str.lower() == artist_name_clean
-    ].copy()
+    artist_series = df_predictions["artist_name"].fillna("").astype(str).str.strip()
+    artist_norm_series = artist_series.apply(_normalize_artist_name)
+
+    # 1) Match exacto normalizado.
+    exact_mask = artist_norm_series == artist_name_norm
+    if exact_mask.any():
+        best_name = artist_series[exact_mask].iloc[0]
+        df_artist = df_predictions[artist_series == best_name].copy()
+    else:
+        # 2) Match parcial (ej: "loretta" debe encontrar "loretta s").
+        partial_mask = artist_norm_series.apply(
+            lambda n: bool(n) and (artist_name_norm in n or n in artist_name_norm)
+        )
+
+        if partial_mask.any():
+            candidates = artist_series[partial_mask].drop_duplicates().tolist()
+            best_name = max(
+                candidates,
+                key=lambda name: difflib.SequenceMatcher(
+                    None, artist_name_norm, _normalize_artist_name(name)
+                ).ratio(),
+            )
+            df_artist = df_predictions[artist_series == best_name].copy()
+        else:
+            # 3) Fuzzy fallback con umbral de confianza.
+            unique_candidates = artist_series.drop_duplicates().tolist()
+            if unique_candidates:
+                scored = sorted(
+                    [
+                        (
+                            name,
+                            difflib.SequenceMatcher(
+                                None, artist_name_norm, _normalize_artist_name(name)
+                            ).ratio(),
+                        )
+                        for name in unique_candidates
+                        if _normalize_artist_name(name)
+                    ],
+                    key=lambda x: x[1],
+                    reverse=True,
+                )
+                best_name, best_score = scored[0]
+                if best_score >= 0.72:
+                    df_artist = df_predictions[artist_series == best_name].copy()
+                else:
+                    df_artist = pd.DataFrame()
+            else:
+                df_artist = pd.DataFrame()
 
     if df_artist.empty:
         artistas_disponibles = (

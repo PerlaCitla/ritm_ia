@@ -5,6 +5,7 @@ import threading
 import json
 import base64
 import re
+import unicodedata
 from dotenv import load_dotenv
 import streamlit as st
 import streamlit.components.v1 as components
@@ -459,6 +460,9 @@ def extract_suggested_questions_from_response(response_text):
         "comparar a este artista",
         "comparar este artista",
         "comparar",
+        "mostrar todos los cluster",
+        "dame los últimos",
+        "dame los ultimos",
     )
 
     lines = response_text.splitlines()
@@ -477,9 +481,10 @@ def extract_suggested_questions_from_response(response_text):
 
         # Limpieza de comillas y markdown básico.
         candidate = candidate.strip('"“”').replace("**", "").strip()
-        # Normalizar signos de apertura para detectar preguntas como "¿Qué significa el Cluster 1?".
+        # Normalizar signos de apertura y acentos para detectar preguntas con tildes (ej: clústeres).
         normalized_candidate = candidate.lstrip("¿¡").strip()
-        lowered = normalized_candidate.lower()
+        lowered = unicodedata.normalize("NFKD", normalized_candidate.lower())
+        lowered = "".join(ch for ch in lowered if not unicodedata.combining(ch))
         if lowered.startswith(valid_prefixes) and candidate not in seen:
             seen.add(candidate)
             suggestions.append(candidate)

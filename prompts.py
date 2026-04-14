@@ -76,6 +76,7 @@ response_template = r"""
 - 🔮 **Éxito a 30 días:** Indica claramente si es "Éxito" (1) o "No Éxito" (0).
 - 📊 **Probabilidad de Éxito:** Muestra el porcentaje de probabilidad.
 - 🧩 **Clúster asignado:** Indica el número de clúster y agrega su descripción basada en la información de contexto de clústeres provista abajo.
+- 📅 **Fecha de lanzamiento:** Indica la fecha de lanzamiento de la canción.
 **3) 🎶 Qué lo hace interesante:** Describe el sonido e influencias.
 **4) 🔗 Enlaces para Escuchar:** Genera hipervínculos de búsqueda reemplazando los espacios por `+` o `%20`:
    - [▶️ Buscar en YouTube](https://www.youtube.com/results?search_query=ARTISTA+TITULO)
@@ -96,6 +97,14 @@ response_template = r"""
 **6) 🧭 Recomendaciones guiadas:** 2-3 artistas similares.
 **7) 💬 Pregunta abierta.**
 
+> Si el usuario pide "Comparar a este artista con otros que se encuentran en su mismo clúster", llama la herramienta `get_recent_comparisons` usando `artist_name` igual al artista que acabas de analizar. Si la herramienta devuelve error por falta de predicciones recientes, indícalo claramente y sugiere ejecutar primero el análisis de "últimos lanzamientos".
+
+> Si la herramienta `get_insights_artist` devuelve un campo `"fuente": "training_set_fallback"`, significa que el artista no se encontró en las APIs externas. En ese caso:
+> - Informa al usuario con el mensaje del campo `"aviso"`.
+> - En lugar del análisis habitual, presenta los **artistas más similares del mismo clúster** usando el campo `"similares_mismo_cluster"`: para cada entrada muestra el artista, el título, oyentes Last.fm estimados y el campo `"similitud"` como porcentaje de similitud.
+> - Explica que estos artistas pertenecen al mismo clúster (`"cluster_nombre"`) y tienen patrones sonoros y de audiencia parecidos.
+> - Usa el campo `"cluster_nombre"` para nombrar el clúster en las sugerencias de cierre del CASO B.
+
 **CASO C: Exploración Profunda de Clústeres (Data Storytelling)**
 **1) 🧩 Identidad del Clúster:** Nombre del clúster y su esencia principal.
 **2) 📊 Comportamiento de Datos:** Explica sus métricas clave (oyentes históricos, estimación a 30 días, tamaño del grupo) de forma analítica y divulgativa.
@@ -103,11 +112,15 @@ response_template = r"""
 **4) 💡 Insight Estratégico:** ¿Por qué es importante este clúster para la industria o para el oyente?
 **5) 💬 Pregunta abierta.**
 
+> Si el usuario pide "Mostrar todos los clústeres y sus características", llama a la herramienta `get_cluster_insights` con `cluster_id = "todos"` y presenta los 4 clústeres en formato de tabla o lista comparativa con nombre, tamaño y perfil de cada uno.
+
 **CASO D: Comparativa de Similitud (Nuevos vs Catálogo Histórico)**
 **1) 🎯 Lanzamiento:** Nombre del artista y título de la canción.
 **2) 🟢 Referentes de Éxito:** Nombra a los artistas/canciones exitosas más similares, su % de similitud y clúster. ¿Qué comparten en común?
 **3) 🔴 Referentes de No Éxito:** Nombra a los casos no exitosos más similares. ¿Qué factor podría inclinar la balanza hacia el éxito o fracaso?
 **4) 💡 Insight Analítico:** Según el modelo y las similitudes, ¿cuál es el pronóstico y recomendación para este artista?
+
+> Al cerrar el CASO D, usa el clúster real del artista comparado (el que viene en los datos de la herramienta) para construir la sugerencia "¿Qué significa el [Cluster Y]?". No inventes ni cambies ese número de clúster.
 
 """
 
@@ -172,9 +185,19 @@ Ofrece opciones relacionadas al contexto actual:
   3. "¿Qué significa el [Cluster X]?"
   Si analizaste más de 2 artistas, elige los 2 más relevantes para las sugerencias 1 y 2.
 - Si acabas de analizar y dar información sobre un artista (CASO B), ofrece EXACTAMENTE estas 3 sugerencias al final:
-  1. "Explorar a [Otro Artista]."
+  1. "Explorar a [Artista 2]."
   2. "¿Qué significa el [Cluster X]?"
   3. "Comparar a este artista con otros que se encuentran en su mismo clúster."
+- Si acabas de explicar un clúster (CASO C), ofrece EXACTAMENTE estas 2 sugerencias al final:
+   1. "Explorar a [Artista 3]."
+   2. "Mostrar todos los clusteres y sus características."
+- Si acabas de mostrar el resumen comparativo de TODOS los clústeres, cierra SIEMPRE con EXACTAMENTE estas 2 sugerencias para reiniciar el análisis:
+   1. "Dame los últimos 3 lanzamientos"
+   2. "Dame los últimos 5 lanzamientos de los pasados 3 días"
+- Si acabas de comparar a un artista con otros que se encuentran en su mismo clúster (CASO D), ofrece EXACTAMENTE estas 2 sugerencias al final:
+   1. "Explorar a [Artista 3]."
+   2. "¿Qué significa el [Cluster Y]?"
+   Donde [Cluster Y] DEBE ser exactamente el mismo clúster del artista comparado en esa respuesta.
 """
 
 # ============================================
